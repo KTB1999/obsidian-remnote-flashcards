@@ -55,7 +55,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   aiEnabled: false,
   aiBaseUrl: "http://localhost:11434/v1",
   aiApiKey: "ollama",
-  aiModel: "starter-agent",
+  aiModel: "",
   newCardsPerDay: 20,
   cardSyntaxBasic: "::",
   cardSyntaxDropdown: ":::",

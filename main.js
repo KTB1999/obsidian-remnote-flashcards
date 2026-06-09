@@ -41,7 +41,7 @@ var DEFAULT_SETTINGS = {
   aiEnabled: false,
   aiBaseUrl: "http://localhost:11434/v1",
   aiApiKey: "ollama",
-  aiModel: "starter-agent",
+  aiModel: "",
   newCardsPerDay: 20,
   cardSyntaxBasic: "::",
   cardSyntaxDropdown: ":::",
@@ -976,7 +976,7 @@ var RemNoteSettingsTab = class extends import_obsidian4.PluginSettingTab {
     );
     containerEl.createEl("h3", { text: "PDF Panel" });
     new import_obsidian4.Setting(containerEl).setName("Zielordner f\xFCr importierte PDFs").setDesc(
-      "PDFs die per Drag & Drop importiert werden, landen hier im Vault.\nDieser Ordner wird von OneDrive automatisch auf alle Ger\xE4te synchronisiert."
+      "PDFs die per Drag & Drop importiert werden, landen hier im Vault.\nFalls dein Vault synchronisiert wird (OneDrive, iCloud, Obsidian Sync), landen importierte PDFs automatisch auf allen Ger\xE4ten."
     ).addText(
       (text) => text.setPlaceholder("Attachments/PDFs").setValue(this.plugin.pluginData.settings.pdfAttachmentFolder).onChange(async (value) => {
         this.plugin.pluginData.settings.pdfAttachmentFolder = value || "Attachments/PDFs";
@@ -1008,7 +1008,7 @@ var RemNoteSettingsTab = class extends import_obsidian4.PluginSettingTab {
     const presets = {
       "\u{1F5A5}\uFE0F Ollama (lokal)": {
         url: "http://localhost:11434/v1",
-        model: "starter-agent",
+        model: "llama3.2",
         keyHint: "ollama"
       },
       "\u26A1 NVIDIA NIM": {

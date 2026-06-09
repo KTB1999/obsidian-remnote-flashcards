@@ -150,7 +150,7 @@ export class RemNoteSettingsTab extends PluginSettingTab {
       .setName("Zielordner für importierte PDFs")
       .setDesc(
         "PDFs die per Drag & Drop importiert werden, landen hier im Vault.\n" +
-        "Dieser Ordner wird von OneDrive automatisch auf alle Geräte synchronisiert."
+        "Falls dein Vault synchronisiert wird (OneDrive, iCloud, Obsidian Sync), landen importierte PDFs automatisch auf allen Geräten."
       )
       .addText((text) =>
         text
@@ -212,7 +212,7 @@ export class RemNoteSettingsTab extends PluginSettingTab {
     const presets: Record<string, { url: string; model: string; keyHint: string }> = {
       "🖥️ Ollama (lokal)": {
         url:     "http://localhost:11434/v1",
-        model:   "starter-agent",
+        model:   "llama3.2",
         keyHint: "ollama",
       },
       "⚡ NVIDIA NIM": {
