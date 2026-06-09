@@ -56,12 +56,12 @@ No API key is bundled — each user connects their own account.
 
 1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from the Obsidian Community Plugins
 2. Open BRAT settings → "Add Beta Plugin"
-3. Enter: `https://github.com/kiranbest1999/obsidian-remnote-flashcards`
+3. Enter: `https://github.com/KTB1999/obsidian-remnote-flashcards`
 4. Enable the plugin in Settings → Community Plugins
 
 ### Manual
 
-1. Download `main.js`, `styles.css`, `manifest.json` from the [latest release](https://github.com/kiranbest1999/obsidian-remnote-flashcards/releases/latest)
+1. Download `main.js`, `styles.css`, `manifest.json` from the [latest release](https://github.com/KTB1999/obsidian-remnote-flashcards/releases/latest)
 2. Create folder: `[your vault]/.obsidian/plugins/obsidian-remnote-flashcards/`
 3. Copy the three files into that folder
 4. Enable the plugin in Settings → Community Plugins
@@ -125,7 +125,7 @@ Drag & drop is desktop-only — add PDFs via the "+ PDF" button on mobile.
 ## Building from Source
 
 ```bash
-git clone https://github.com/kiranbest1999/obsidian-remnote-flashcards
+git clone https://github.com/KTB1999/obsidian-remnote-flashcards
 cd obsidian-remnote-flashcards
 npm install
 npm run build
