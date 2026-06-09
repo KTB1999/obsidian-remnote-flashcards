@@ -24,14 +24,14 @@ A feature-rich flashcard and PDF study plugin for [Obsidian](https://obsidian.md
 - **AI explain** — "✦ Erklären" button during review shows why the answer is correct
 - Works with **any OpenAI-compatible provider** — bring your own API key:
 
-| Provider | Free tier | Base URL |
+| Provider | Cost | Base URL |
 |---|---|---|
 | Ollama (local) | Free (runs on your GPU) | `http://localhost:11434/v1` |
 | NVIDIA NIM | ✅ Free credits | `https://integrate.api.nvidia.com/v1` |
 | OpenAI | ❌ Paid | `https://api.openai.com/v1` |
 | OpenRouter | ✅ Free models available | `https://openrouter.ai/api/v1` |
 
-No API key is bundled — each user connects their own account.
+No API key is provided — each user connects their own account.
 
 ### PDF Side Panel
 - Link one or more PDFs to any note — panel auto-syncs when you switch notes
