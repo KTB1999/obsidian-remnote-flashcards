@@ -1,0 +1,919 @@
+/* ===== MODAL CONTAINER ===== */
+.remnote-review-modal {
+  width: min(680px, 95vw);
+  max-height: 85vh;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.remnote-review-modal .modal-content {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+  max-height: 85vh;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+/* ===== PROGRESS BAR ===== */
+.remnote-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.remnote-progress-bar {
+  height: 6px;
+  flex: 1;
+  background: var(--color-accent);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  min-width: 4px;
+}
+
+.remnote-progress-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ===== CARD TYPE BADGE ===== */
+.remnote-card-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--tag-background);
+  color: var(--tag-color);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ===== CARD CONTENT ===== */
+.remnote-card-front {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.5;
+  padding: 20px;
+  background: var(--background-secondary);
+  border-radius: 10px;
+  margin-bottom: 16px;
+  min-height: 80px;
+  border-left: 4px solid var(--color-accent);
+}
+
+.remnote-card-back {
+  font-size: 16px;
+  line-height: 1.5;
+  padding: 16px 20px;
+  background: var(--background-primary-alt);
+  border-radius: 10px;
+  margin-bottom: 16px;
+  border-left: 4px solid var(--color-green);
+}
+
+/* ===== DROPDOWN (CLOZE) ===== */
+.remnote-dropdown-answer {
+  font-size: 16px;
+  line-height: 1.5;
+  padding: 14px 20px;
+  background: var(--background-primary-alt);
+  border-radius: 10px;
+  margin-bottom: 16px;
+  border: 2px dashed var(--background-modifier-border);
+  transition: filter 0.25s ease;
+}
+
+.remnote-blurred {
+  filter: blur(5px);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ===== BUTTONS ===== */
+.remnote-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.remnote-btn:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+.remnote-btn:active {
+  transform: translateY(0);
+}
+
+.remnote-btn-reveal {
+  background: var(--color-accent);
+  color: var(--text-on-accent);
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  margin-bottom: 12px;
+}
+
+.remnote-btn-ai {
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 6px 14px;
+  margin-bottom: 12px;
+}
+
+/* ===== RATING SECTION ===== */
+.remnote-rating-wrap {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.remnote-rating-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.remnote-rating-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.remnote-btn-rating {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+  border: none;
+}
+
+.remnote-rating-key {
+  font-size: 10px;
+  opacity: 0.75;
+  font-weight: 400;
+}
+
+.remnote-rating-again  { background: #e05252; }
+.remnote-rating-hard   { background: #d4870a; }
+.remnote-rating-good   { background: #2d8a4e; }
+.remnote-rating-easy   { background: #1a7abf; }
+
+.remnote-rating-again:hover  { background: #c43d3d; }
+.remnote-rating-hard:hover   { background: #b87209; }
+.remnote-rating-good:hover   { background: #226b3c; }
+.remnote-rating-easy:hover   { background: #1460a0; }
+
+/* ===== AI ANSWER ===== */
+.remnote-ai-answer {
+  padding: 12px 16px;
+  background: var(--background-secondary);
+  border-radius: 8px;
+  border-left: 3px solid #8b5cf6;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.remnote-ai-label {
+  font-weight: 700;
+  color: #8b5cf6;
+  margin-right: 4px;
+}
+
+/* ===== FINISHED SCREEN ===== */
+.remnote-finished-icon {
+  font-size: 48px;
+  text-align: center;
+  margin-bottom: 8px;
+  color: var(--color-green);
+}
+
+.remnote-finished-title {
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.remnote-finished-sub {
+  text-align: center;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+/* ===== TOP ROW (badge + source) ===== */
+.remnote-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.remnote-btn-source {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.remnote-btn-source:hover {
+  color: var(--text-normal);
+  border-color: var(--text-muted);
+}
+
+/* ===== AI ROW ===== */
+.remnote-ai-row {
+  margin-bottom: 4px;
+}
+
+/* ===== SESSION PICKER MODAL ===== */
+.remnote-picker-modal {
+  width: min(680px, 95vw);
+  max-height: 85vh;
+}
+
+.remnote-picker-modal .modal-content {
+  overflow-y: auto;
+  max-height: 80vh;
+  padding: 24px;
+}
+
+.remnote-picker-title {
+  margin-bottom: 4px;
+}
+
+.remnote-picker-section {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  margin: 20px 0 8px;
+  font-weight: 600;
+}
+
+.remnote-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  background: var(--background-secondary);
+  gap: 12px;
+}
+
+.remnote-picker-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.remnote-picker-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.remnote-picker-name {
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.remnote-picker-name-sm {
+  font-size: 13px;
+}
+
+.remnote-picker-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.remnote-picker-urgent {
+  color: #e05252;
+  font-weight: 600;
+}
+
+.remnote-picker-day  { color: var(--color-accent); }
+.remnote-picker-due  { color: #e05252; }
+.remnote-picker-new  { color: var(--color-accent); }
+.remnote-picker-total{ color: var(--text-muted); }
+
+.remnote-picker-btn {
+  background: var(--color-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.remnote-picker-btn:hover { opacity: 0.85; }
+.remnote-picker-btn:disabled { opacity: 0.4; cursor: default; }
+
+.remnote-picker-btn-done {
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: default;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.remnote-picker-btn-sm {
+  background: var(--background-modifier-border);
+  color: var(--text-normal);
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.remnote-picker-btn-sm:hover { background: var(--color-accent); color: var(--text-on-accent); }
+
+.remnote-picker-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+
+.remnote-file-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.remnote-file-row {
+  background: transparent;
+  padding: 8px 10px;
+}
+
+/* ===== SETTINGS — EXAM GROUPS ===== */
+.remnote-settings-groups {
+  margin-bottom: 12px;
+}
+
+.remnote-settings-group-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--background-secondary);
+  margin-bottom: 6px;
+  gap: 10px;
+}
+
+.remnote-settings-group-info {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.remnote-settings-group-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.remnote-settings-group-date,
+.remnote-settings-group-paths {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.remnote-settings-group-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.remnote-btn-small {
+  background: var(--background-modifier-border);
+  border: none;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-normal);
+}
+
+.remnote-btn-small:hover {
+  background: var(--color-accent);
+  color: var(--text-on-accent);
+}
+
+.remnote-btn-delete {
+  background: transparent;
+  border: 1px solid #e05252;
+  color: #e05252;
+}
+
+.remnote-btn-delete:hover {
+  background: #e05252;
+  color: white;
+}
+
+.remnote-settings-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-style: italic;
+  padding: 8px 0;
+}
+
+/* ===== EXAM GROUP EDIT MODAL ===== */
+.remnote-group-modal {
+  padding: 4px;
+}
+
+/* ===== RIBBON BADGE ===== */
+.remnote-ribbon-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: #e05252;
+  color: white;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  line-height: 1;
+}
+
+/* ===== BROWSE MODAL ===== */
+.remnote-browse-modal {
+  width: min(760px, 97vw);
+  max-height: 88vh;
+}
+
+.remnote-browse-modal .modal-content {
+  padding: 20px 24px;
+  overflow-y: auto;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.remnote-browse-title {
+  margin-bottom: 10px;
+}
+
+.remnote-browse-search-row {
+  margin-bottom: 12px;
+}
+
+.remnote-browse-search {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 14px;
+  outline: none;
+}
+
+.remnote-browse-search:focus {
+  border-color: var(--color-accent);
+}
+
+/* Tab bar */
+.remnote-browse-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.remnote-browse-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.15s;
+}
+
+.remnote-browse-tab:hover,
+.remnote-browse-tab.active {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-color: var(--color-accent);
+}
+
+.remnote-browse-tab-label { font-weight: 500; }
+
+.remnote-browse-tab-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  color: white;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* Card list */
+.remnote-browse-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.remnote-browse-empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 40px 0;
+  font-style: italic;
+}
+
+/* Individual card row */
+.remnote-browse-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.remnote-browse-card:hover {
+  border-color: var(--color-accent);
+}
+
+.remnote-browse-card.expanded {
+  border-color: var(--color-accent);
+}
+
+.remnote-browse-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  background: var(--background-secondary);
+  user-select: none;
+}
+
+.remnote-browse-card-header:hover {
+  background: var(--background-modifier-hover);
+}
+
+.remnote-browse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.remnote-browse-front {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* prevent markdown renderer from adding margin */
+.remnote-browse-front p,
+.remnote-browse-front > * { margin: 0 !important; display: inline; }
+
+.remnote-browse-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.remnote-browse-file {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--tag-background);
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.remnote-browse-interval {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.remnote-browse-src-btn {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+/* Expanded back */
+.remnote-browse-back {
+  padding: 12px 16px 8px 30px;
+  font-size: 14px;
+  line-height: 1.6;
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-primary-alt);
+}
+
+.remnote-browse-stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 8px 16px 10px 30px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--background-primary-alt);
+  border-top: 1px dashed var(--background-modifier-border);
+}
+
+/* ===== AI SETTINGS ===== */
+.remnote-key-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--color-accent);
+  font-style: italic;
+}
+
+/* Make preset buttons wrap nicely */
+.setting-item .setting-item-control {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ===== PDF PANEL ===== */
+.remnote-pdf-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+/* Toolbar */
+.remnote-pdf-toolbar {
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  background: var(--background-secondary);
+}
+
+/* Tab row */
+.remnote-pdf-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  min-height: 26px;
+}
+
+.remnote-pdf-tab {
+  background: var(--background-modifier-border);
+  border: none;
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-muted);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.remnote-pdf-tab:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.remnote-pdf-tab.active { background: var(--color-accent); color: var(--text-on-accent); }
+
+.remnote-pdf-no-pdf {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* Button row */
+.remnote-pdf-btn-row {
+  display: flex;
+  gap: 5px;
+}
+
+.remnote-pdf-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--background-modifier-border);
+  border: none;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-normal);
+  transition: background 0.15s;
+}
+
+.remnote-pdf-btn:hover { background: var(--background-modifier-hover); }
+
+.remnote-pdf-btn-danger:hover { background: #e05252; color: white; }
+
+.remnote-pdf-btn-link {
+  background: var(--color-accent);
+  color: var(--text-on-accent);
+}
+.remnote-pdf-btn-link:hover { opacity: 0.85; }
+
+/* Navigation bar */
+.remnote-pdf-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  flex-shrink: 0;
+}
+
+.remnote-pdf-nav-btn {
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-normal);
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.remnote-pdf-nav-btn:hover { background: var(--background-modifier-hover); }
+
+.remnote-pdf-page-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.remnote-pdf-page-input {
+  width: 52px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 13px;
+  text-align: center;
+}
+
+.remnote-pdf-page-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+/* Hide number input arrows */
+.remnote-pdf-page-input::-webkit-outer-spin-button,
+.remnote-pdf-page-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.remnote-pdf-page-input[type=number] { -moz-appearance: textfield; }
+
+.remnote-pdf-nav-spacer { flex: 1; }
+
+/* PDF container — Obsidian native embed renders here */
+.remnote-pdf-container {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Override Obsidian's default PDF embed sizing so it fills the panel */
+.remnote-pdf-container .pdf-embed {
+  height: 100% !important;
+  max-height: none !important;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.remnote-pdf-container .pdf-embed .pdf-embed-link {
+  display: none; /* hide "Open in new tab" header link inside panel */
+}
+
+.remnote-pdf-container .pdf-embed iframe,
+.remnote-pdf-container .pdf-embed object,
+.remnote-pdf-container .pdf-embed embed {
+  flex: 1;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 500px;
+  border: none;
+}
+
+/* Fallback: if Obsidian wraps embed in a container div */
+.remnote-pdf-container > div {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+}
+
+/* Status (empty state) */
+.remnote-pdf-status {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.remnote-pdf-status-icon { font-size: 40px; }
+.remnote-pdf-status-text { font-size: 15px; font-weight: 600; color: var(--text-normal); }
+.remnote-pdf-status-sub  { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+
+/* ===== PDF MAIN AREA ===== */
+.remnote-pdf-main {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== PDF DROP OVERLAY ===== */
+.remnote-pdf-drop-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: rgba(var(--color-accent-rgb, 99, 102, 241), 0.15);
+  border: 3px dashed var(--color-accent);
+  border-radius: 8px;
+  margin: 8px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+}
+
+.remnote-pdf-drop-icon  { font-size: 48px; }
+.remnote-pdf-drop-title { font-size: 18px; font-weight: 700; color: var(--color-accent); }
+.remnote-pdf-drop-sub   { font-size: 13px; color: var(--text-muted); text-align: center; }

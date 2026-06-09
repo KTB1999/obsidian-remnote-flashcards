@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-remnote-flashcards",
+  "name": "RemNote Flashcards",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "RemNote-style flashcards with SM-2 spaced repetition, AI autofill, and exam-aware scheduling.",
+  "author": "Kiran",
+  "authorUrl": "https://github.com/kiranbest1999",
+  "isDesktopOnly": false
+}
