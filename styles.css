@@ -917,3 +917,104 @@
 .remnote-pdf-drop-icon  { font-size: 48px; }
 .remnote-pdf-drop-title { font-size: 18px; font-weight: 700; color: var(--color-accent); }
 .remnote-pdf-drop-sub   { font-size: 13px; color: var(--text-muted); text-align: center; }
+
+/* ===== MULTILAYER CARDS ===== */
+.remnote-multilayer-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 12px 16px;
+  background: var(--background-secondary);
+  border-radius: 8px;
+  border-left: 3px solid var(--color-accent);
+}
+
+.remnote-ml-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  flex-wrap: wrap;
+}
+
+.remnote-ml-row.remnote-ml-has-nested {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.remnote-ml-row.remnote-ml-has-nested > .remnote-ml-question,
+.remnote-ml-row.remnote-ml-has-nested > .remnote-ml-answer {
+  display: inline;
+}
+
+/* Inline row for :: entries */
+.remnote-ml-row:not(.remnote-ml-has-nested) {
+  flex-direction: row;
+  align-items: center;
+}
+
+.remnote-ml-question {
+  font-weight: 500;
+  color: var(--text-normal);
+  flex-shrink: 0;
+}
+
+.remnote-ml-question p { margin: 0; display: inline; }
+
+.remnote-ml-sep {
+  color: var(--text-muted);
+  font-size: 13px;
+  flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.remnote-ml-answer {
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.remnote-ml-answer p { margin: 0; display: inline; }
+
+.remnote-ml-answer.remnote-blurred {
+  filter: blur(4px);
+  transition: filter 0.15s ease;
+  user-select: none;
+}
+
+.remnote-ml-answer.remnote-blurred:hover {
+  filter: blur(2px);
+}
+
+.remnote-ml-toggle {
+  margin-top: 4px;
+  padding: 2px 10px;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.remnote-ml-toggle:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.remnote-ml-subcontainer {
+  padding-left: 16px;
+  border-left: 2px solid var(--background-modifier-border);
+  margin-top: 4px;
+  width: 100%;
+}
+
+.remnote-ml-plain {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 2px 0;
+}
+
+.remnote-ml-plain p { margin: 0; }

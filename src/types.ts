@@ -1,4 +1,4 @@
-export type CardType = "basic" | "dropdown";
+export type CardType = "basic" | "dropdown" | "multilayer";
 
 export interface Flashcard {
   id: string;          // hash of filePath + line + front

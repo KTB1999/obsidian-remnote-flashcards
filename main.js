@@ -61,14 +61,25 @@ function cardBelongsToGroup(card, group) {
 }
 
 // src/parser.ts
-var import_crypto = require("crypto");
 function cardId(filePath, front, line) {
-  return (0, import_crypto.createHash)("md5").update(`${filePath}::${line}::${front}`).digest("hex").slice(0, 12);
+  const str = `${filePath}:${line}:${front}`;
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(36).padStart(7, "0");
 }
 function isContinuationLine(line) {
   if (line.trim() === "")
     return false;
   return /^[\t ]/.test(line) || /^\s*[-*+]\s/.test(line) || /^\s*\d+\.\s/.test(line);
+}
+function isMultilayer(back) {
+  return back.split("\n").some((l) => {
+    const stripped = l.replace(/^\s*[-*+]\s+/, "").trim();
+    return findSeparator(stripped, "::") !== -1;
+  });
 }
 function parseFlashcards(content, filePath) {
   var _a, _b, _c;
@@ -99,7 +110,8 @@ function parseFlashcards(content, filePath) {
       const firstBack = line.slice(dropIdx + 3).trim();
       if (front) {
         const { back, consumed } = collectBack(firstBack, lines, i + 1);
-        cards.push({ id: cardId(filePath, front, i), filePath, front, back, type: "dropdown", line: i });
+        const type = isMultilayer(back) ? "multilayer" : "dropdown";
+        cards.push({ id: cardId(filePath, front, i), filePath, front, back, type, line: i });
         i += consumed;
       }
       i++;
@@ -127,13 +139,10 @@ function collectBack(inlinePart, lines, nextLine) {
     parts.push(inlinePart);
   let j = nextLine;
   while (j < lines.length && isContinuationLine(lines[j])) {
-    parts.push(lines[j].trimStart());
+    parts.push(lines[j]);
     j++;
   }
-  return {
-    back: parts.join("\n"),
-    consumed: j - nextLine
-  };
+  return { back: parts.join("\n"), consumed: j - nextLine };
 }
 function cleanFront(raw) {
   return raw.replace(/^[\s]*[-*+]\s+/, "").replace(/^\s*\d+\.\s+/, "").replace(/^\s*#+\s+/, "").trim();
@@ -401,80 +410,168 @@ var ReviewModal = class extends import_obsidian.Modal {
     const progressWrap = contentEl.createDiv("remnote-progress-wrap");
     const progressBar = progressWrap.createDiv("remnote-progress-bar");
     progressBar.style.width = `${this.currentIndex / this.cards.length * 100}%`;
-    progressWrap.createEl("span", {
-      text: `${this.currentIndex + 1} / ${this.cards.length}`,
-      cls: "remnote-progress-text"
-    });
+    progressWrap.createEl("span", { text: `${this.currentIndex + 1} / ${this.cards.length}`, cls: "remnote-progress-text" });
     const topRow = contentEl.createDiv("remnote-top-row");
     const badge = topRow.createDiv("remnote-card-badge");
-    badge.setText(card.type === "basic" ? "Karteikarte" : "Dropdown");
-    const sourceBtn = topRow.createEl("button", {
-      cls: "remnote-btn-source",
-      title: "In Notiz \xF6ffnen"
-    });
+    badge.setText(card.type === "basic" ? "Karteikarte" : card.type === "multilayer" ? "Mehrschichtig" : "Dropdown");
+    const sourceBtn = topRow.createEl("button", { cls: "remnote-btn-source", title: "In Notiz \xF6ffnen" });
     sourceBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> Quelle`;
     sourceBtn.onclick = () => this.openSource(card);
     const frontEl = contentEl.createDiv("remnote-card-front");
     await import_obsidian.MarkdownRenderer.render(this.app, card.front, frontEl, card.filePath, this.plugin);
-    if (card.type === "dropdown") {
-      const dropEl = contentEl.createDiv("remnote-dropdown-answer");
-      dropEl.addClass("remnote-blurred");
-      await import_obsidian.MarkdownRenderer.render(this.app, card.back, dropEl, card.filePath, this.plugin);
-      const revealBtn = contentEl.createEl("button", {
-        text: "Antwort anzeigen",
-        cls: "remnote-btn remnote-btn-reveal"
-      });
-      revealBtn.onclick = () => {
-        dropEl.removeClass("remnote-blurred");
-        revealBtn.style.display = "none";
-        this.showAnswerActions(contentEl, card);
-      };
-      this.keyHandler = (e) => {
-        if (e.key === " " && !this.isRatingVisible(contentEl)) {
-          e.preventDefault();
-          revealBtn.click();
-        }
-      };
-      document.addEventListener("keydown", this.keyHandler);
+    if (card.type === "multilayer") {
+      await this.renderMultilayer(contentEl, card);
+    } else if (card.type === "dropdown") {
+      await this.renderDropdown(contentEl, card);
     } else {
-      const flipBtn = contentEl.createEl("button", {
-        text: "Umdrehen  [Space]",
-        cls: "remnote-btn remnote-btn-reveal"
-      });
-      flipBtn.onclick = async () => {
-        flipBtn.style.display = "none";
-        const answerEl = contentEl.createDiv("remnote-card-back");
-        await import_obsidian.MarkdownRenderer.render(this.app, card.back, answerEl, card.filePath, this.plugin);
-        this.showAnswerActions(contentEl, card);
-      };
-      this.keyHandler = (e) => {
-        if (e.key === " " && !this.isRatingVisible(contentEl)) {
-          e.preventDefault();
-          flipBtn.click();
-        }
-      };
-      document.addEventListener("keydown", this.keyHandler);
+      await this.renderBasic(contentEl, card);
     }
   }
+  // ── Basic (flip) card ─────────────────────────────────────────────────────
+  async renderBasic(container, card) {
+    const flipBtn = container.createEl("button", { text: "Umdrehen  [Space]", cls: "remnote-btn remnote-btn-reveal" });
+    flipBtn.onclick = async () => {
+      flipBtn.style.display = "none";
+      const answerEl = container.createDiv("remnote-card-back");
+      await import_obsidian.MarkdownRenderer.render(this.app, card.back, answerEl, card.filePath, this.plugin);
+      this.showAnswerActions(container, card);
+    };
+    this.keyHandler = (e) => {
+      if (e.key === " " && !this.isRatingVisible(container)) {
+        e.preventDefault();
+        flipBtn.click();
+      }
+    };
+    document.addEventListener("keydown", this.keyHandler);
+  }
+  // ── Dropdown (cloze) card ─────────────────────────────────────────────────
+  async renderDropdown(container, card) {
+    const dropEl = container.createDiv("remnote-dropdown-answer");
+    dropEl.addClass("remnote-blurred");
+    await import_obsidian.MarkdownRenderer.render(this.app, card.back, dropEl, card.filePath, this.plugin);
+    const revealBtn = container.createEl("button", { text: "Antwort anzeigen", cls: "remnote-btn remnote-btn-reveal" });
+    revealBtn.onclick = () => {
+      dropEl.removeClass("remnote-blurred");
+      revealBtn.style.display = "none";
+      this.showAnswerActions(container, card);
+    };
+    this.keyHandler = (e) => {
+      if (e.key === " " && !this.isRatingVisible(container)) {
+        e.preventDefault();
+        revealBtn.click();
+      }
+    };
+    document.addEventListener("keydown", this.keyHandler);
+  }
+  // ── Multilayer card ───────────────────────────────────────────────────────
+  async renderMultilayer(container, card) {
+    const revealBtn = container.createEl("button", { text: "Unterfragen anzeigen  [Space]", cls: "remnote-btn remnote-btn-reveal" });
+    revealBtn.onclick = async () => {
+      revealBtn.style.display = "none";
+      const mlContainer = container.createDiv("remnote-multilayer-container");
+      await this.renderMultilayerBack(card.back, mlContainer, card.filePath);
+      this.showAnswerActions(container, card);
+    };
+    this.keyHandler = (e) => {
+      if (e.key === " " && !this.isRatingVisible(container)) {
+        e.preventDefault();
+        revealBtn.click();
+      }
+    };
+    document.addEventListener("keydown", this.keyHandler);
+  }
+  /**
+   * Render multilayer back content.
+   * Lines matching `- Question :: Answer` become interactive rows:
+   *   - Question is always visible
+   *   - Answer is blurred, click to reveal
+   * Lines with `:::` get a nested sub-section toggle.
+   * Plain lines render as normal markdown.
+   */
+  async renderMultilayerBack(back, container, filePath) {
+    var _a, _b, _c, _d, _e, _f;
+    const lines = back.split("\n");
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      if (!trimmed) {
+        i++;
+        continue;
+      }
+      const content = trimmed.replace(/^[-*+]\s+/, "");
+      const indent = (_c = (_b = (_a = line.match(/^(\s*)/)) == null ? void 0 : _a[1]) == null ? void 0 : _b.length) != null ? _c : 0;
+      const dropIdx = findSeparator(content, ":::");
+      if (dropIdx !== -1) {
+        const qText = content.slice(0, dropIdx).trim();
+        const aText = content.slice(dropIdx + 3).trim();
+        const subLines = [];
+        let j = i + 1;
+        while (j < lines.length) {
+          const nextTrimmed = lines[j].trim();
+          const nextIndent = (_f = (_e = (_d = lines[j].match(/^(\s*)/)) == null ? void 0 : _d[1]) == null ? void 0 : _e.length) != null ? _f : 0;
+          if (!nextTrimmed || nextIndent <= indent)
+            break;
+          subLines.push(lines[j]);
+          j++;
+        }
+        const row = container.createDiv("remnote-ml-row remnote-ml-has-nested");
+        const qEl = row.createDiv("remnote-ml-question");
+        await import_obsidian.MarkdownRenderer.render(this.app, qText, qEl, filePath, this.plugin);
+        if (aText) {
+          const sep = row.createSpan({ text: "\u2192", cls: "remnote-ml-sep" });
+          const aEl = row.createDiv("remnote-ml-answer remnote-blurred");
+          await import_obsidian.MarkdownRenderer.render(this.app, aText, aEl, filePath, this.plugin);
+          sep.onclick = aEl.onclick = () => aEl.removeClass("remnote-blurred");
+        }
+        if (subLines.length > 0) {
+          const toggleBtn = row.createEl("button", { text: "+ Details", cls: "remnote-ml-toggle" });
+          const subContainer = row.createDiv("remnote-ml-subcontainer");
+          subContainer.style.display = "none";
+          await this.renderMultilayerBack(subLines.join("\n"), subContainer, filePath);
+          toggleBtn.onclick = () => {
+            const open = subContainer.style.display !== "none";
+            subContainer.style.display = open ? "none" : "block";
+            toggleBtn.setText(open ? "+ Details" : "\u2212 Details");
+          };
+        }
+        i = j;
+        continue;
+      }
+      const basicIdx = findSeparator(content, "::");
+      if (basicIdx !== -1) {
+        const qText = content.slice(0, basicIdx).trim();
+        const aText = content.slice(basicIdx + 2).trim();
+        const row = container.createDiv("remnote-ml-row");
+        const qEl = row.createDiv("remnote-ml-question");
+        await import_obsidian.MarkdownRenderer.render(this.app, qText, qEl, filePath, this.plugin);
+        if (aText) {
+          const sep = row.createSpan({ text: "\u2192", cls: "remnote-ml-sep" });
+          const aEl = row.createDiv("remnote-ml-answer remnote-blurred");
+          await import_obsidian.MarkdownRenderer.render(this.app, aText, aEl, filePath, this.plugin);
+          sep.onclick = aEl.onclick = () => aEl.removeClass("remnote-blurred");
+        }
+        i++;
+        continue;
+      }
+      const plain = container.createDiv("remnote-ml-plain");
+      await import_obsidian.MarkdownRenderer.render(this.app, trimmed.replace(/^[-*+]\s+/, ""), plain, filePath, this.plugin);
+      i++;
+    }
+  }
+  // ── Shared ────────────────────────────────────────────────────────────────
   isRatingVisible(container) {
     return !!container.querySelector(".remnote-rating-wrap");
   }
   showAnswerActions(container, card) {
     if (this.plugin.pluginData.settings.aiEnabled) {
       const aiRow = container.createDiv("remnote-ai-row");
-      const aiBtn = aiRow.createEl("button", {
-        text: "\u2726 Erkl\xE4ren",
-        cls: "remnote-btn remnote-btn-ai"
-      });
+      const aiBtn = aiRow.createEl("button", { text: "\u2726 Erkl\xE4ren", cls: "remnote-btn remnote-btn-ai" });
       aiBtn.onclick = async () => {
         aiBtn.disabled = true;
         aiBtn.setText("Erkl\xE4re...");
         try {
-          const explanation = await aiExplainAnswer(
-            card.front,
-            card.back,
-            this.plugin.pluginData.settings
-          );
+          const explanation = await aiExplainAnswer(card.front, card.back, this.plugin.pluginData.settings);
           aiBtn.style.display = "none";
           const aiEl = container.createDiv("remnote-ai-answer");
           aiEl.createEl("span", { text: "\u2726 ", cls: "remnote-ai-label" });
@@ -490,10 +587,7 @@ var ReviewModal = class extends import_obsidian.Modal {
   }
   showRatingButtons(container, card) {
     const ratingWrap = container.createDiv("remnote-rating-wrap");
-    ratingWrap.createEl("p", {
-      text: "Wie gut wusstest du die Antwort?",
-      cls: "remnote-rating-label"
-    });
+    ratingWrap.createEl("p", { text: "Wie gut wusstest du die Antwort?", cls: "remnote-rating-label" });
     const buttons = [
       { rating: "again", label: "Wieder", key: "1" },
       { rating: "hard", label: "Schwer", key: "2" },
@@ -502,28 +596,19 @@ var ReviewModal = class extends import_obsidian.Modal {
     ];
     const btnRow = ratingWrap.createDiv("remnote-rating-buttons");
     for (const { rating, label, key } of buttons) {
-      const btn = btnRow.createEl("button", {
-        cls: `remnote-btn remnote-btn-rating remnote-rating-${rating}`
-      });
+      const btn = btnRow.createEl("button", { cls: `remnote-btn remnote-btn-rating remnote-rating-${rating}` });
       btn.innerHTML = `<span class="remnote-rating-key">${key}</span>${label}`;
       btn.onclick = () => this.submitRating(rating);
     }
-    if (this.keyHandler) {
+    if (this.keyHandler)
       document.removeEventListener("keydown", this.keyHandler);
-    }
     this.keyHandler = (e) => {
-      if (e.key === "1")
-        this.submitRating("again");
-      else if (e.key === "2")
-        this.submitRating("hard");
-      else if (e.key === "3")
-        this.submitRating("good");
-      else if (e.key === "4")
-        this.submitRating("easy");
-      else
-        return;
-      document.removeEventListener("keydown", this.keyHandler);
-      this.keyHandler = null;
+      const map = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
+      if (map[e.key]) {
+        this.submitRating(map[e.key]);
+        document.removeEventListener("keydown", this.keyHandler);
+        this.keyHandler = null;
+      }
     };
     document.addEventListener("keydown", this.keyHandler);
   }
@@ -548,10 +633,7 @@ var ReviewModal = class extends import_obsidian.Modal {
     const view = leaf.view;
     if (view == null ? void 0 : view.editor) {
       view.editor.setCursor({ line: card.line, ch: 0 });
-      view.editor.scrollIntoView(
-        { from: { line: card.line, ch: 0 }, to: { line: card.line, ch: 999 } },
-        true
-      );
+      view.editor.scrollIntoView({ from: { line: card.line, ch: 0 }, to: { line: card.line, ch: 999 } }, true);
     }
   }
   renderFinished() {
@@ -559,14 +641,8 @@ var ReviewModal = class extends import_obsidian.Modal {
     contentEl.empty();
     contentEl.createDiv("remnote-finished-icon").setText("\u2713");
     contentEl.createEl("h2", { text: "Sitzung abgeschlossen!", cls: "remnote-finished-title" });
-    contentEl.createEl("p", {
-      text: `${this.cards.length} Karten bearbeitet.`,
-      cls: "remnote-finished-sub"
-    });
-    const doneBtn = contentEl.createEl("button", {
-      text: "Schlie\xDFen",
-      cls: "remnote-btn remnote-btn-reveal"
-    });
+    contentEl.createEl("p", { text: `${this.cards.length} Karten bearbeitet.`, cls: "remnote-finished-sub" });
+    const doneBtn = contentEl.createEl("button", { text: "Schlie\xDFen", cls: "remnote-btn remnote-btn-reveal" });
     doneBtn.onclick = () => this.close();
   }
 };
@@ -1185,18 +1261,54 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
   }
   // ── Sync to whichever note is open ───────────────────────────────────────
   syncToActiveNote() {
-    var _a;
     const active = this.app.workspace.getActiveFile();
     if (!active || active.extension !== "md")
       return;
     if (active.path === this.notePath)
       return;
     this.notePath = active.path;
-    this.pdfPaths = [...(_a = this.plugin.pluginData.pdfLinks[this.notePath]) != null ? _a : []];
+    this.pdfPaths = this.readFrontmatterPdfs(active);
     this.activeIdx = 0;
     this.currentPage = 1;
     this.refreshTabs();
     this.renderPdf();
+  }
+  /** Read pdf-links from note frontmatter. Falls back to data.json for migration. */
+  readFrontmatterPdfs(file) {
+    var _a, _b;
+    const cache = this.app.metadataCache.getFileCache(file);
+    const raw = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a["pdf-links"];
+    if (raw != null) {
+      return (Array.isArray(raw) ? raw : [raw]).filter((p) => typeof p === "string");
+    }
+    const legacy = (_b = this.plugin.pluginData.pdfLinks) == null ? void 0 : _b[file.path];
+    if (legacy == null ? void 0 : legacy.length) {
+      this.saveFrontmatterPdfs(file, legacy);
+      return [...legacy];
+    }
+    return [];
+  }
+  /** Write pdf-links array into the note's YAML frontmatter. */
+  async saveFrontmatterPdfs(file, paths) {
+    var _a;
+    try {
+      await this.app.fileManager.processFrontMatter(file, (fm) => {
+        if (paths.length > 0)
+          fm["pdf-links"] = paths;
+        else
+          delete fm["pdf-links"];
+      });
+      if ((_a = this.plugin.pluginData.pdfLinks) == null ? void 0 : _a[file.path]) {
+        delete this.plugin.pluginData.pdfLinks[file.path];
+        await this.plugin.savePluginData();
+      }
+    } catch (e) {
+      if (paths.length > 0)
+        this.plugin.pluginData.pdfLinks[file.path] = paths;
+      else
+        delete this.plugin.pluginData.pdfLinks[file.path];
+      await this.plugin.savePluginData();
+    }
   }
   // ── Build the static DOM shell ────────────────────────────────────────────
   buildShell() {
@@ -1355,7 +1467,7 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
       return false;
     }
   }
-  // ── Insert [[pdf#page=N]] into active note ────────────────────────────────
+  // ── Insert [[pdf#page=N|S.N]] into active note ────────────────────────────
   insertPageRef() {
     var _a;
     if (this.pdfPaths.length === 0) {
@@ -1363,7 +1475,8 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
       return;
     }
     const pdfName = (_a = this.pdfPaths[this.activeIdx].split("/").pop()) != null ? _a : "";
-    const ref = `[[${pdfName}#page=${this.currentPage}]]`;
+    const baseName = pdfName.replace(/\.pdf$/i, "");
+    const ref = `[[${pdfName}#page=${this.currentPage}|${baseName} S.${this.currentPage}]]`;
     const view = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
     if (view == null ? void 0 : view.editor) {
       view.editor.replaceRange(ref, view.editor.getCursor());
@@ -1484,8 +1597,9 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
       return;
     }
     this.pdfPaths.push(vaultPath);
-    this.plugin.pluginData.pdfLinks[this.notePath] = [...this.pdfPaths];
-    await this.plugin.savePluginData();
+    const noteFile = this.app.vault.getAbstractFileByPath(this.notePath);
+    if (noteFile instanceof import_obsidian5.TFile)
+      await this.saveFrontmatterPdfs(noteFile, [...this.pdfPaths]);
     this.activeIdx = this.pdfPaths.length - 1;
     this.currentPage = 1;
     this.refreshTabs();
@@ -1533,11 +1647,9 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
     const removed = this.pdfPaths[this.activeIdx].split("/").pop();
     this.pdfPaths.splice(this.activeIdx, 1);
     if (this.notePath) {
-      if (this.pdfPaths.length === 0)
-        delete this.plugin.pluginData.pdfLinks[this.notePath];
-      else
-        this.plugin.pluginData.pdfLinks[this.notePath] = [...this.pdfPaths];
-      await this.plugin.savePluginData();
+      const noteFile = this.app.vault.getAbstractFileByPath(this.notePath);
+      if (noteFile instanceof import_obsidian5.TFile)
+        await this.saveFrontmatterPdfs(noteFile, [...this.pdfPaths]);
     }
     this.activeIdx = Math.max(0, this.activeIdx - 1);
     this.currentPage = 1;

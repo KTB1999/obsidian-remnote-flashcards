@@ -1,18 +1,31 @@
 import { Flashcard, CardType } from "./types";
-import { createHash } from "crypto";
 
+// Pure JS FNV-1a hash — works on desktop AND mobile (no Node crypto needed)
 function cardId(filePath: string, front: string, line: number): string {
-  return createHash("md5").update(`${filePath}::${line}::${front}`).digest("hex").slice(0, 12);
+  const str = `${filePath}:${line}:${front}`;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36).padStart(7, "0");
 }
 
 /**
- * A continuation line is part of the card's back content.
- * It must be indented OR start with a list marker (-, *, +, 1.)
- * An empty line always terminates.
+ * A continuation line belongs to the card's back content.
+ * Must be indented OR start with a list marker. Empty line terminates.
  */
 function isContinuationLine(line: string): boolean {
   if (line.trim() === "") return false;
   return /^[\t ]/.test(line) || /^\s*[-*+]\s/.test(line) || /^\s*\d+\.\s/.test(line);
+}
+
+/** Returns true when the back content contains sub-bullets with :: or ::: */
+function isMultilayer(back: string): boolean {
+  return back.split("\n").some((l) => {
+    const stripped = l.replace(/^\s*[-*+]\s+/, "").trim();
+    return findSeparator(stripped, "::") !== -1;
+  });
 }
 
 export function parseFlashcards(content: string, filePath: string): Flashcard[] {
@@ -39,14 +52,16 @@ export function parseFlashcards(content: string, filePath: string): Flashcard[] 
       continue;
     }
 
-    // Detect ::: first (must come before :: check)
+    // Detect ::: first (before ::)
     const dropIdx = findSeparator(line, ":::");
     if (dropIdx !== -1) {
       const front = cleanFront(line.slice(0, dropIdx));
       const firstBack = line.slice(dropIdx + 3).trim();
       if (front) {
         const { back, consumed } = collectBack(firstBack, lines, i + 1);
-        cards.push({ id: cardId(filePath, front, i), filePath, front, back, type: "dropdown", line: i });
+        // If sub-bullets themselves contain :: → multilayer card
+        const type: CardType = isMultilayer(back) ? "multilayer" : "dropdown";
+        cards.push({ id: cardId(filePath, front, i), filePath, front, back, type, line: i });
         i += consumed;
       }
       i++;
@@ -73,38 +88,29 @@ export function parseFlashcards(content: string, filePath: string): Flashcard[] 
   return cards;
 }
 
-/**
- * Collect the back content: start with the inline portion (same line),
- * then absorb all immediately following continuation lines.
- * Returns the combined back string and how many extra lines were consumed.
- */
 function collectBack(inlinePart: string, lines: string[], nextLine: number): { back: string; consumed: number } {
   const parts: string[] = [];
   if (inlinePart) parts.push(inlinePart);
 
   let j = nextLine;
   while (j < lines.length && isContinuationLine(lines[j])) {
-    parts.push(lines[j].trimStart()); // remove leading indent — Markdown renders it anyway
+    parts.push(lines[j]); // keep original indentation for multilayer depth detection
     j++;
   }
 
-  return {
-    back: parts.join("\n"),
-    consumed: j - nextLine,
-  };
+  return { back: parts.join("\n"), consumed: j - nextLine };
 }
 
-/** Strip leading list markers and Obsidian bullet chars from the front */
 function cleanFront(raw: string): string {
   return raw
-    .replace(/^[\s]*[-*+]\s+/, "")   // leading bullet
-    .replace(/^\s*\d+\.\s+/, "")      // leading numbered list
-    .replace(/^\s*#+\s+/, "")         // leading heading marker
+    .replace(/^[\s]*[-*+]\s+/, "")
+    .replace(/^\s*\d+\.\s+/, "")
+    .replace(/^\s*#+\s+/, "")
     .trim();
 }
 
-/** Find a separator that is NOT inside backtick spans or [[wikilinks]] */
-function findSeparator(line: string, sep: string): number {
+/** Find a separator not inside backtick spans or [[wikilinks]] */
+export function findSeparator(line: string, sep: string): number {
   let inCode = false;
   let inLink = 0;
   for (let i = 0; i <= line.length - sep.length; i++) {
@@ -113,7 +119,7 @@ function findSeparator(line: string, sep: string): number {
     if (!inCode && ch === "[") inLink++;
     if (!inCode && ch === "]") inLink = Math.max(0, inLink - 1);
     if (!inCode && inLink === 0 && line.slice(i, i + sep.length) === sep) {
-      if (sep === "::" && line[i + 2] === ":") continue; // skip ::: when looking for ::
+      if (sep === "::" && line[i + 2] === ":") continue; // skip ::: when searching for ::
       return i;
     }
   }

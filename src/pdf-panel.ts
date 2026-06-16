@@ -58,12 +58,49 @@ export class PdfPanelView extends ItemView {
     const active = this.app.workspace.getActiveFile();
     if (!active || active.extension !== "md") return;
     if (active.path === this.notePath) return;
-    this.notePath  = active.path;
-    this.pdfPaths  = [...(this.plugin.pluginData.pdfLinks[this.notePath] ?? [])];
-    this.activeIdx = 0;
+    this.notePath    = active.path;
+    this.pdfPaths    = this.readFrontmatterPdfs(active);
+    this.activeIdx   = 0;
     this.currentPage = 1;
     this.refreshTabs();
     this.renderPdf();
+  }
+
+  /** Read pdf-links from note frontmatter. Falls back to data.json for migration. */
+  private readFrontmatterPdfs(file: TFile): string[] {
+    const cache = this.app.metadataCache.getFileCache(file);
+    const raw   = cache?.frontmatter?.["pdf-links"];
+    if (raw != null) {
+      return (Array.isArray(raw) ? raw : [raw]).filter((p): p is string => typeof p === "string");
+    }
+    // Migrate from legacy data.json storage if frontmatter has nothing yet
+    const legacy = this.plugin.pluginData.pdfLinks?.[file.path];
+    if (legacy?.length) {
+      this.saveFrontmatterPdfs(file, legacy); // migrate silently
+      return [...legacy];
+    }
+    return [];
+  }
+
+  /** Write pdf-links array into the note's YAML frontmatter. */
+  private async saveFrontmatterPdfs(file: TFile, paths: string[]) {
+    try {
+      await (this.app as any).fileManager.processFrontMatter(file, (fm: Record<string, any>) => {
+        if (paths.length > 0) fm["pdf-links"] = paths;
+        else delete fm["pdf-links"];
+      });
+      // Remove from legacy data.json once migrated
+      if (this.plugin.pluginData.pdfLinks?.[file.path]) {
+        delete this.plugin.pluginData.pdfLinks[file.path];
+        await this.plugin.savePluginData();
+      }
+    } catch (e) {
+      // processFrontMatter may not be available in very old Obsidian versions
+      // Fall back to data.json
+      if (paths.length > 0) this.plugin.pluginData.pdfLinks[file.path] = paths;
+      else delete this.plugin.pluginData.pdfLinks[file.path];
+      await this.plugin.savePluginData();
+    }
   }
 
   // ── Build the static DOM shell ────────────────────────────────────────────
@@ -253,11 +290,12 @@ export class PdfPanelView extends ItemView {
     }
   }
 
-  // ── Insert [[pdf#page=N]] into active note ────────────────────────────────
+  // ── Insert [[pdf#page=N|S.N]] into active note ────────────────────────────
   insertPageRef() {
     if (this.pdfPaths.length === 0) { new Notice("Kein PDF aktiv."); return; }
     const pdfName = this.pdfPaths[this.activeIdx].split("/").pop() ?? "";
-    const ref     = `[[${pdfName}#page=${this.currentPage}]]`;
+    const baseName = pdfName.replace(/\.pdf$/i, "");
+    const ref      = `[[${pdfName}#page=${this.currentPage}|${baseName} S.${this.currentPage}]]`;
 
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (view?.editor) {
@@ -376,8 +414,8 @@ export class PdfPanelView extends ItemView {
       this.refreshTabs(); this.renderPdf(); return;
     }
     this.pdfPaths.push(vaultPath);
-    this.plugin.pluginData.pdfLinks[this.notePath] = [...this.pdfPaths];
-    await this.plugin.savePluginData();
+    const noteFile = this.app.vault.getAbstractFileByPath(this.notePath);
+    if (noteFile instanceof TFile) await this.saveFrontmatterPdfs(noteFile, [...this.pdfPaths]);
     this.activeIdx = this.pdfPaths.length - 1; this.currentPage = 1;
     this.refreshTabs(); this.renderPdf();
   }
@@ -415,9 +453,8 @@ export class PdfPanelView extends ItemView {
     const removed = this.pdfPaths[this.activeIdx].split("/").pop();
     this.pdfPaths.splice(this.activeIdx, 1);
     if (this.notePath) {
-      if (this.pdfPaths.length === 0) delete this.plugin.pluginData.pdfLinks[this.notePath];
-      else this.plugin.pluginData.pdfLinks[this.notePath] = [...this.pdfPaths];
-      await this.plugin.savePluginData();
+      const noteFile = this.app.vault.getAbstractFileByPath(this.notePath);
+      if (noteFile instanceof TFile) await this.saveFrontmatterPdfs(noteFile, [...this.pdfPaths]);
     }
     this.activeIdx = Math.max(0, this.activeIdx - 1);
     this.currentPage = 1;
