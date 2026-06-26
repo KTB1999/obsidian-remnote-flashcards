@@ -1,22 +1,112 @@
 import {
   ItemView, WorkspaceLeaf, TFile, Notice,
-  FuzzySuggestModal, App, MarkdownView, MarkdownRenderer
+  Modal, App, MarkdownView, MarkdownRenderer
 } from "obsidian";
 import type RemNoteFlashcardsPlugin from "./main";
 
 export const PDF_PANEL_VIEW_TYPE = "remnote-pdf-panel";
 
-// ── PDF file picker ───────────────────────────────────────────────────────────
-class PdfFileSuggest extends FuzzySuggestModal<TFile> {
-  private onChoose: (file: TFile) => void;
-  constructor(app: App, onChoose: (file: TFile) => void) {
+// ── PDF multi-select modal ────────────────────────────────────────────────────
+class PdfMultiSelectModal extends Modal {
+  private onConfirm: (vaultFiles: TFile[], deviceFiles: File[]) => void;
+  private selected  = new Set<string>();
+  private pendingDeviceFiles: File[] = [];
+
+  constructor(app: App, onConfirm: (vaultFiles: TFile[], deviceFiles: File[]) => void) {
     super(app);
-    this.onChoose = onChoose;
-    this.setPlaceholder("PDF aus Vault auswählen…");
+    this.onConfirm = onConfirm;
   }
-  getItems(): TFile[]          { return this.app.vault.getFiles().filter(f => f.extension === "pdf"); }
-  getItemText(f: TFile): string { return f.path; }
-  onChooseItem(f: TFile): void  { this.onChoose(f); }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass("remnote-pdf-multiselect-modal");
+    contentEl.createEl("h3", { text: "PDFs hinzufügen", cls: "remnote-pdf-modal-title" });
+
+    // ── Search ──────────────────────────────────────────────────────────────
+    const searchInput = contentEl.createEl("input", {
+      type: "text",
+      cls:  "remnote-pdf-modal-search",
+      placeholder: "Vault-PDFs suchen…",
+    });
+
+    // ── Vault list ──────────────────────────────────────────────────────────
+    const allPdfs = this.app.vault.getFiles().filter(f => f.extension === "pdf");
+    const listEl  = contentEl.createDiv("remnote-pdf-modal-list");
+
+    const renderList = (query: string) => {
+      listEl.empty();
+      const q        = query.toLowerCase();
+      const filtered = q ? allPdfs.filter(f => f.path.toLowerCase().includes(q)) : allPdfs;
+
+      if (filtered.length === 0) {
+        listEl.createEl("p", { text: "Keine PDFs im Vault gefunden.", cls: "remnote-pdf-modal-empty" });
+        return;
+      }
+
+      for (const pdf of filtered) {
+        const row      = listEl.createDiv("remnote-pdf-modal-row");
+        const checkbox = row.createEl("input", { type: "checkbox" });
+        checkbox.checked = this.selected.has(pdf.path);
+
+        const name = row.createEl("span", { cls: "remnote-pdf-modal-row-name" });
+        name.createEl("span", { text: pdf.name.replace(/\.pdf$/i, ""), cls: "remnote-pdf-modal-fname" });
+        name.createEl("span", { text: pdf.parent?.path ?? "", cls: "remnote-pdf-modal-fpath" });
+
+        const toggle = () => {
+          checkbox.checked ? this.selected.add(pdf.path) : this.selected.delete(pdf.path);
+          row.toggleClass("selected", checkbox.checked);
+        };
+        checkbox.onchange = toggle;
+        row.onclick = (e) => {
+          if ((e.target as HTMLElement).tagName === "INPUT") return;
+          checkbox.checked = !checkbox.checked;
+          toggle();
+        };
+        row.toggleClass("selected", checkbox.checked);
+      }
+    };
+
+    searchInput.oninput = () => renderList(searchInput.value);
+    renderList("");
+
+    // ── Device upload ───────────────────────────────────────────────────────
+    const uploadSection = contentEl.createDiv("remnote-pdf-modal-upload");
+    const uploadBtn = uploadSection.createEl("button", {
+      text: "📁 Vom Gerät hochladen",
+      cls:  "remnote-btn",
+    });
+    const uploadLabel = uploadSection.createEl("span", {
+      cls:  "remnote-pdf-modal-upload-label",
+      text: "",
+    });
+
+    uploadBtn.onclick = () => {
+      const input    = document.createElement("input");
+      input.type     = "file";
+      input.accept   = ".pdf,application/pdf";
+      input.multiple = true;
+      input.onchange = () => {
+        if (!input.files) return;
+        for (let i = 0; i < input.files.length; i++) this.pendingDeviceFiles.push(input.files[i]);
+        uploadLabel.textContent = `${this.pendingDeviceFiles.length} Datei(en) ausgewählt`;
+      };
+      input.click();
+    };
+
+    // ── Confirm / Cancel ────────────────────────────────────────────────────
+    const btnRow     = contentEl.createDiv("remnote-pdf-modal-actions");
+    const confirmBtn = btnRow.createEl("button", { text: "Hinzufügen", cls: "remnote-btn remnote-btn-cta" });
+    const cancelBtn  = btnRow.createEl("button", { text: "Abbrechen",  cls: "remnote-btn" });
+
+    confirmBtn.onclick = () => {
+      const chosen = allPdfs.filter(f => this.selected.has(f.path));
+      this.onConfirm(chosen, this.pendingDeviceFiles);
+      this.close();
+    };
+    cancelBtn.onclick = () => this.close();
+  }
+
+  onClose() { this.contentEl.empty(); }
 }
 
 // ── Main PDF panel ────────────────────────────────────────────────────────────
@@ -444,7 +534,10 @@ export class PdfPanelView extends ItemView {
   // ── Manage linked PDFs ────────────────────────────────────────────────────
   private addPdfFromVault() {
     if (!this.notePath) { new Notice("Keine Notiz geöffnet."); return; }
-    new PdfFileSuggest(this.app, (f) => this.linkPdf(f.path)).open();
+    new PdfMultiSelectModal(this.app, async (vaultFiles, deviceFiles) => {
+      for (const f of vaultFiles)  await this.linkPdf(f.path);
+      for (const f of deviceFiles) await this.importDroppedPdf(f);
+    }).open();
   }
 
   private async removeActivePdf() {

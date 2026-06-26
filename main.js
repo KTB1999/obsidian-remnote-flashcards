@@ -1288,20 +1288,91 @@ var RemNoteSettingsTab = class extends import_obsidian5.PluginSettingTab {
 // src/pdf-panel.ts
 var import_obsidian6 = require("obsidian");
 var PDF_PANEL_VIEW_TYPE = "remnote-pdf-panel";
-var PdfFileSuggest = class extends import_obsidian6.FuzzySuggestModal {
-  constructor(app, onChoose) {
+var PdfMultiSelectModal = class extends import_obsidian6.Modal {
+  constructor(app, onConfirm) {
     super(app);
-    this.onChoose = onChoose;
-    this.setPlaceholder("PDF aus Vault ausw\xE4hlen\u2026");
+    this.selected = /* @__PURE__ */ new Set();
+    this.pendingDeviceFiles = [];
+    this.onConfirm = onConfirm;
   }
-  getItems() {
-    return this.app.vault.getFiles().filter((f) => f.extension === "pdf");
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass("remnote-pdf-multiselect-modal");
+    contentEl.createEl("h3", { text: "PDFs hinzuf\xFCgen", cls: "remnote-pdf-modal-title" });
+    const searchInput = contentEl.createEl("input", {
+      type: "text",
+      cls: "remnote-pdf-modal-search",
+      placeholder: "Vault-PDFs suchen\u2026"
+    });
+    const allPdfs = this.app.vault.getFiles().filter((f) => f.extension === "pdf");
+    const listEl = contentEl.createDiv("remnote-pdf-modal-list");
+    const renderList = (query) => {
+      var _a, _b;
+      listEl.empty();
+      const q = query.toLowerCase();
+      const filtered = q ? allPdfs.filter((f) => f.path.toLowerCase().includes(q)) : allPdfs;
+      if (filtered.length === 0) {
+        listEl.createEl("p", { text: "Keine PDFs im Vault gefunden.", cls: "remnote-pdf-modal-empty" });
+        return;
+      }
+      for (const pdf of filtered) {
+        const row = listEl.createDiv("remnote-pdf-modal-row");
+        const checkbox = row.createEl("input", { type: "checkbox" });
+        checkbox.checked = this.selected.has(pdf.path);
+        const name = row.createEl("span", { cls: "remnote-pdf-modal-row-name" });
+        name.createEl("span", { text: pdf.name.replace(/\.pdf$/i, ""), cls: "remnote-pdf-modal-fname" });
+        name.createEl("span", { text: (_b = (_a = pdf.parent) == null ? void 0 : _a.path) != null ? _b : "", cls: "remnote-pdf-modal-fpath" });
+        const toggle = () => {
+          checkbox.checked ? this.selected.add(pdf.path) : this.selected.delete(pdf.path);
+          row.toggleClass("selected", checkbox.checked);
+        };
+        checkbox.onchange = toggle;
+        row.onclick = (e) => {
+          if (e.target.tagName === "INPUT")
+            return;
+          checkbox.checked = !checkbox.checked;
+          toggle();
+        };
+        row.toggleClass("selected", checkbox.checked);
+      }
+    };
+    searchInput.oninput = () => renderList(searchInput.value);
+    renderList("");
+    const uploadSection = contentEl.createDiv("remnote-pdf-modal-upload");
+    const uploadBtn = uploadSection.createEl("button", {
+      text: "\u{1F4C1} Vom Ger\xE4t hochladen",
+      cls: "remnote-btn"
+    });
+    const uploadLabel = uploadSection.createEl("span", {
+      cls: "remnote-pdf-modal-upload-label",
+      text: ""
+    });
+    uploadBtn.onclick = () => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".pdf,application/pdf";
+      input.multiple = true;
+      input.onchange = () => {
+        if (!input.files)
+          return;
+        for (let i = 0; i < input.files.length; i++)
+          this.pendingDeviceFiles.push(input.files[i]);
+        uploadLabel.textContent = `${this.pendingDeviceFiles.length} Datei(en) ausgew\xE4hlt`;
+      };
+      input.click();
+    };
+    const btnRow = contentEl.createDiv("remnote-pdf-modal-actions");
+    const confirmBtn = btnRow.createEl("button", { text: "Hinzuf\xFCgen", cls: "remnote-btn remnote-btn-cta" });
+    const cancelBtn = btnRow.createEl("button", { text: "Abbrechen", cls: "remnote-btn" });
+    confirmBtn.onclick = () => {
+      const chosen = allPdfs.filter((f) => this.selected.has(f.path));
+      this.onConfirm(chosen, this.pendingDeviceFiles);
+      this.close();
+    };
+    cancelBtn.onclick = () => this.close();
   }
-  getItemText(f) {
-    return f.path;
-  }
-  onChooseItem(f) {
-    this.onChoose(f);
+  onClose() {
+    this.contentEl.empty();
   }
 };
 var PdfPanelView = class extends import_obsidian6.ItemView {
@@ -1717,7 +1788,12 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
       new import_obsidian6.Notice("Keine Notiz ge\xF6ffnet.");
       return;
     }
-    new PdfFileSuggest(this.app, (f) => this.linkPdf(f.path)).open();
+    new PdfMultiSelectModal(this.app, async (vaultFiles, deviceFiles) => {
+      for (const f of vaultFiles)
+        await this.linkPdf(f.path);
+      for (const f of deviceFiles)
+        await this.importDroppedPdf(f);
+    }).open();
   }
   async removeActivePdf() {
     if (this.pdfPaths.length === 0)

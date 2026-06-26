@@ -918,6 +918,132 @@
 .remnote-pdf-drop-title { font-size: 18px; font-weight: 700; color: var(--color-accent); }
 .remnote-pdf-drop-sub   { font-size: 13px; color: var(--text-muted); text-align: center; }
 
+/* ===== PDF MULTI-SELECT MODAL ===== */
+.remnote-pdf-multiselect-modal {
+  width: min(520px, 95vw);
+}
+
+.remnote-pdf-multiselect-modal .modal-content {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.remnote-pdf-modal-title {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.remnote-pdf-modal-search {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.remnote-pdf-modal-list {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+}
+
+.remnote-pdf-modal-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+  transition: background 0.1s;
+}
+
+.remnote-pdf-modal-row:last-child { border-bottom: none; }
+
+.remnote-pdf-modal-row:hover,
+.remnote-pdf-modal-row.selected {
+  background: var(--background-modifier-hover);
+}
+
+.remnote-pdf-modal-row.selected {
+  background: rgba(var(--color-accent-rgb, 99,102,241), 0.1);
+}
+
+.remnote-pdf-modal-row input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--color-accent);
+}
+
+.remnote-pdf-modal-row-name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.remnote-pdf-modal-fname {
+  font-size: 14px;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.remnote-pdf-modal-fpath {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.remnote-pdf-modal-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.remnote-pdf-modal-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.remnote-pdf-modal-upload-label {
+  font-size: 13px;
+  color: var(--text-accent);
+}
+
+.remnote-pdf-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.remnote-btn-cta {
+  background: var(--color-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.remnote-btn-cta:hover { opacity: 0.9; }
+
 /* ===== MULTILAYER CARDS ===== */
 .remnote-multilayer-container {
   display: flex;
