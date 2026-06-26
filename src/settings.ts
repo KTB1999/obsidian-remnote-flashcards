@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting, Notice, Modal, ButtonComponent } from "
 import type RemNoteFlashcardsPlugin from "./main";
 import { aiGenerateAnswer } from "./ai";
 import { ExamGroup } from "./types";
+import { checkForUpdate, downloadAndInstall, reloadPlugin } from "./updater";
 
 // ---- Mini-modal to edit one exam group ----
 class ExamGroupModal extends Modal {
@@ -88,6 +89,51 @@ export class RemNoteSettingsTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "RemNote Flashcards — Einstellungen" });
+
+    // ===== UPDATE =====
+    containerEl.createEl("h3", { text: "Plugin-Update" });
+
+    const currentVersion = this.plugin.manifest.version;
+    const updateSetting  = new Setting(containerEl)
+      .setName(`Aktuelle Version: v${currentVersion}`)
+      .setDesc("Prüft GitHub auf neue Releases und installiert sie direkt.");
+
+    let checkBtn: ButtonComponent;
+    updateSetting.addButton((btn) => {
+      checkBtn = btn;
+      btn.setButtonText("Auf Updates prüfen").onClick(async () => {
+        btn.setButtonText("Prüfe…").setDisabled(true);
+        try {
+          const result = await checkForUpdate(currentVersion);
+          if (!result.hasUpdate) {
+            btn.setButtonText(`✓ Aktuell (v${currentVersion})`).setDisabled(false);
+            new Notice("Kein Update verfügbar — du hast die neueste Version.", 4000);
+            return;
+          }
+          // New version found — swap button to install
+          btn.setButtonText(`⬇ v${result.latestVersion} installieren`).setDisabled(false);
+          btn.setCta();
+          updateSetting.setDesc(
+            `Neue Version v${result.latestVersion} verfügbar! ` +
+            `Klick auf den Button um zu installieren — Obsidian lädt das Plugin danach neu.`
+          );
+          btn.onClick(async () => {
+            btn.setButtonText("Installiere…").setDisabled(true);
+            try {
+              await downloadAndInstall(this.plugin, result.assets);
+              new Notice(`✓ v${result.latestVersion} installiert — Plugin wird neu geladen…`, 3000);
+              setTimeout(() => reloadPlugin(this.plugin), 1000);
+            } catch (e: any) {
+              new Notice("✗ Update fehlgeschlagen: " + e.message, 8000);
+              btn.setButtonText(`⬇ v${result.latestVersion} installieren`).setDisabled(false);
+            }
+          });
+        } catch (e: any) {
+          new Notice("✗ Verbindungsfehler: " + e.message, 8000);
+          btn.setButtonText("Auf Updates prüfen").setDisabled(false);
+        }
+      });
+    });
 
     // ===== PRÜFUNGSPLANUNG =====
     containerEl.createEl("h3", { text: "Prüfungen" });

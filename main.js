@@ -26,7 +26,7 @@ __export(main_exports, {
   default: () => RemNoteFlashcardsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 
 // src/types.ts
 var RATING_QUALITY = {
@@ -968,8 +968,50 @@ var BrowseModal = class extends import_obsidian3.Modal {
 };
 
 // src/settings.ts
+var import_obsidian5 = require("obsidian");
+
+// src/updater.ts
 var import_obsidian4 = require("obsidian");
-var ExamGroupModal = class extends import_obsidian4.Modal {
+var REPO = "KTB1999/obsidian-remnote-flashcards";
+var API = `https://api.github.com/repos/${REPO}/releases/latest`;
+function semverGt(a, b) {
+  var _a, _b, _c, _d;
+  const pa = a.replace(/^v/, "").split(".").map(Number);
+  const pb = b.replace(/^v/, "").split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if (((_a = pa[i]) != null ? _a : 0) > ((_b = pb[i]) != null ? _b : 0))
+      return true;
+    if (((_c = pa[i]) != null ? _c : 0) < ((_d = pb[i]) != null ? _d : 0))
+      return false;
+  }
+  return false;
+}
+async function checkForUpdate(currentVersion) {
+  var _a, _b, _c;
+  const res = await (0, import_obsidian4.requestUrl)({ url: API, headers: { "User-Agent": "obsidian-remnote-flashcards" } });
+  const release = res.json;
+  const latest = (_b = (_a = release.tag_name) == null ? void 0 : _a.replace(/^v/, "")) != null ? _b : "";
+  return { hasUpdate: semverGt(latest, currentVersion), latestVersion: latest, assets: (_c = release.assets) != null ? _c : [] };
+}
+async function downloadAndInstall(plugin, assets) {
+  const dir = `.obsidian/plugins/${plugin.manifest.id}`;
+  const files = ["main.js", "styles.css", "manifest.json"];
+  for (const name of files) {
+    const asset = assets.find((a) => a.name === name);
+    if (!asset)
+      continue;
+    const res = await (0, import_obsidian4.requestUrl)({ url: asset.browser_download_url });
+    await plugin.app.vault.adapter.write(`${dir}/${name}`, res.text);
+  }
+}
+async function reloadPlugin(plugin) {
+  const plugins = plugin.app.plugins;
+  await plugins.disablePlugin(plugin.manifest.id);
+  await plugins.enablePlugin(plugin.manifest.id);
+}
+
+// src/settings.ts
+var ExamGroupModal = class extends import_obsidian5.Modal {
   constructor(app, group, onSave) {
     super(app);
     this.group = { ...group, paths: [...group.paths] };
@@ -979,13 +1021,13 @@ var ExamGroupModal = class extends import_obsidian4.Modal {
     const { contentEl } = this;
     contentEl.addClass("remnote-group-modal");
     contentEl.createEl("h3", { text: "Pr\xFCfungsgruppe bearbeiten" });
-    new import_obsidian4.Setting(contentEl).setName("Name").setDesc("z.B. 'Obstbau Klausur'").addText(
+    new import_obsidian5.Setting(contentEl).setName("Name").setDesc("z.B. 'Obstbau Klausur'").addText(
       (t) => t.setValue(this.group.name).onChange((v) => this.group.name = v)
     );
-    new import_obsidian4.Setting(contentEl).setName("Pr\xFCfungsdatum").setDesc("Format: YYYY-MM-DD").addText(
+    new import_obsidian5.Setting(contentEl).setName("Pr\xFCfungsdatum").setDesc("Format: YYYY-MM-DD").addText(
       (t) => t.setPlaceholder("2026-07-15").setValue(this.group.examDate).onChange((v) => this.group.examDate = v)
     );
-    new import_obsidian4.Setting(contentEl).setName("Verkn\xFCpfte Pfade").setDesc(
+    new import_obsidian5.Setting(contentEl).setName("Verkn\xFCpfte Pfade").setDesc(
       "Eine Notiz oder ein Ordner pro Zeile.\nOrdner: 'Sources/VL Notizen/Agrarwissenschaften/'\nNotiz: 'Sources/VL Notizen/Agrarwissenschaften/Obstbau SS2026.md'"
     ).addTextArea((ta) => {
       ta.setValue(this.group.paths.join("\n"));
@@ -995,10 +1037,10 @@ var ExamGroupModal = class extends import_obsidian4.Modal {
         this.group.paths = v.split("\n").map((s) => s.trim()).filter(Boolean);
       });
     });
-    new import_obsidian4.Setting(contentEl).addButton(
+    new import_obsidian5.Setting(contentEl).addButton(
       (btn) => btn.setButtonText("Speichern").setCta().onClick(() => {
         if (!this.group.name) {
-          new import_obsidian4.Notice("Bitte einen Namen eingeben.");
+          new import_obsidian5.Notice("Bitte einen Namen eingeben.");
           return;
         }
         this.onSave(this.group);
@@ -1010,7 +1052,7 @@ var ExamGroupModal = class extends import_obsidian4.Modal {
     this.contentEl.empty();
   }
 };
-var RemNoteSettingsTab = class extends import_obsidian4.PluginSettingTab {
+var RemNoteSettingsTab = class extends import_obsidian5.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -1019,11 +1061,48 @@ var RemNoteSettingsTab = class extends import_obsidian4.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "RemNote Flashcards \u2014 Einstellungen" });
+    containerEl.createEl("h3", { text: "Plugin-Update" });
+    const currentVersion = this.plugin.manifest.version;
+    const updateSetting = new import_obsidian5.Setting(containerEl).setName(`Aktuelle Version: v${currentVersion}`).setDesc("Pr\xFCft GitHub auf neue Releases und installiert sie direkt.");
+    let checkBtn;
+    updateSetting.addButton((btn) => {
+      checkBtn = btn;
+      btn.setButtonText("Auf Updates pr\xFCfen").onClick(async () => {
+        btn.setButtonText("Pr\xFCfe\u2026").setDisabled(true);
+        try {
+          const result = await checkForUpdate(currentVersion);
+          if (!result.hasUpdate) {
+            btn.setButtonText(`\u2713 Aktuell (v${currentVersion})`).setDisabled(false);
+            new import_obsidian5.Notice("Kein Update verf\xFCgbar \u2014 du hast die neueste Version.", 4e3);
+            return;
+          }
+          btn.setButtonText(`\u2B07 v${result.latestVersion} installieren`).setDisabled(false);
+          btn.setCta();
+          updateSetting.setDesc(
+            `Neue Version v${result.latestVersion} verf\xFCgbar! Klick auf den Button um zu installieren \u2014 Obsidian l\xE4dt das Plugin danach neu.`
+          );
+          btn.onClick(async () => {
+            btn.setButtonText("Installiere\u2026").setDisabled(true);
+            try {
+              await downloadAndInstall(this.plugin, result.assets);
+              new import_obsidian5.Notice(`\u2713 v${result.latestVersion} installiert \u2014 Plugin wird neu geladen\u2026`, 3e3);
+              setTimeout(() => reloadPlugin(this.plugin), 1e3);
+            } catch (e) {
+              new import_obsidian5.Notice("\u2717 Update fehlgeschlagen: " + e.message, 8e3);
+              btn.setButtonText(`\u2B07 v${result.latestVersion} installieren`).setDisabled(false);
+            }
+          });
+        } catch (e) {
+          new import_obsidian5.Notice("\u2717 Verbindungsfehler: " + e.message, 8e3);
+          btn.setButtonText("Auf Updates pr\xFCfen").setDisabled(false);
+        }
+      });
+    });
     containerEl.createEl("h3", { text: "Pr\xFCfungen" });
     const groups = this.plugin.pluginData.settings.examGroups;
     const groupsContainer = containerEl.createDiv("remnote-settings-groups");
     this.renderGroupList(groupsContainer);
-    new import_obsidian4.Setting(containerEl).setName("Neue Pr\xFCfung hinzuf\xFCgen").setDesc("Erstelle eine Pr\xFCfungsgruppe und verkn\xFCpfe sie mit Notizen oder Ordnern.").addButton(
+    new import_obsidian5.Setting(containerEl).setName("Neue Pr\xFCfung hinzuf\xFCgen").setDesc("Erstelle eine Pr\xFCfungsgruppe und verkn\xFCpfe sie mit Notizen oder Ordnern.").addButton(
       (btn) => btn.setButtonText("+ Hinzuf\xFCgen").onClick(() => {
         const newGroup = {
           id: Date.now().toString(),
@@ -1038,20 +1117,20 @@ var RemNoteSettingsTab = class extends import_obsidian4.PluginSettingTab {
         }).open();
       })
     );
-    new import_obsidian4.Setting(containerEl).setName("Neue Karten pro Tag (Fallback)").setDesc("Wird verwendet, wenn kein Pr\xFCfungsdatum f\xFCr eine Karte gesetzt ist.").addSlider(
+    new import_obsidian5.Setting(containerEl).setName("Neue Karten pro Tag (Fallback)").setDesc("Wird verwendet, wenn kein Pr\xFCfungsdatum f\xFCr eine Karte gesetzt ist.").addSlider(
       (slider) => slider.setLimits(5, 100, 5).setValue(this.plugin.pluginData.settings.newCardsPerDay).setDynamicTooltip().onChange(async (value) => {
         this.plugin.pluginData.settings.newCardsPerDay = value;
         await this.plugin.savePluginData();
       })
     );
-    new import_obsidian4.Setting(containerEl).setName("T\xE4gliche Erinnerung").setDesc("Zeigt beim Start eine Benachrichtigung, wenn Karten f\xE4llig sind.").addToggle(
+    new import_obsidian5.Setting(containerEl).setName("T\xE4gliche Erinnerung").setDesc("Zeigt beim Start eine Benachrichtigung, wenn Karten f\xE4llig sind.").addToggle(
       (toggle) => toggle.setValue(this.plugin.pluginData.settings.dailyReminderEnabled).onChange(async (value) => {
         this.plugin.pluginData.settings.dailyReminderEnabled = value;
         await this.plugin.savePluginData();
       })
     );
     containerEl.createEl("h3", { text: "PDF Panel" });
-    new import_obsidian4.Setting(containerEl).setName("Zielordner f\xFCr importierte PDFs").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("Zielordner f\xFCr importierte PDFs").setDesc(
       "PDFs die per Drag & Drop importiert werden, landen hier im Vault.\nFalls dein Vault synchronisiert wird (OneDrive, iCloud, Obsidian Sync), landen importierte PDFs automatisch auf allen Ger\xE4ten."
     ).addText(
       (text) => text.setPlaceholder("Attachments/PDFs").setValue(this.plugin.pluginData.settings.pdfAttachmentFolder).onChange(async (value) => {
@@ -1060,20 +1139,20 @@ var RemNoteSettingsTab = class extends import_obsidian4.PluginSettingTab {
       })
     );
     containerEl.createEl("h3", { text: "Karten-Syntax" });
-    new import_obsidian4.Setting(containerEl).setName("Basic-Karte Trennzeichen").setDesc("Standard: ::  \u2192  Frage :: Antwort").addText(
+    new import_obsidian5.Setting(containerEl).setName("Basic-Karte Trennzeichen").setDesc("Standard: ::  \u2192  Frage :: Antwort").addText(
       (text) => text.setValue(this.plugin.pluginData.settings.cardSyntaxBasic).onChange(async (value) => {
         this.plugin.pluginData.settings.cardSyntaxBasic = value || "::";
         await this.plugin.savePluginData();
       })
     );
-    new import_obsidian4.Setting(containerEl).setName("Dropdown-Karte Trennzeichen").setDesc("Standard: :::  \u2192  Begriff ::: Definition").addText(
+    new import_obsidian5.Setting(containerEl).setName("Dropdown-Karte Trennzeichen").setDesc("Standard: :::  \u2192  Begriff ::: Definition").addText(
       (text) => text.setValue(this.plugin.pluginData.settings.cardSyntaxDropdown).onChange(async (value) => {
         this.plugin.pluginData.settings.cardSyntaxDropdown = value || ":::";
         await this.plugin.savePluginData();
       })
     );
     containerEl.createEl("h3", { text: "AI" });
-    new import_obsidian4.Setting(containerEl).setName("AI aktivieren").setDesc(
+    new import_obsidian5.Setting(containerEl).setName("AI aktivieren").setDesc(
       "Aktiviert zwei Funktionen:\n1. Command 'AI Antwort generieren' beim Schreiben (Strg+P)\n2. '\u2726 Erkl\xE4ren'-Button nach dem Umdrehen einer Karte"
     ).addToggle(
       (toggle) => toggle.setValue(this.plugin.pluginData.settings.aiEnabled).onChange(async (value) => {
@@ -1106,7 +1185,7 @@ var RemNoteSettingsTab = class extends import_obsidian4.PluginSettingTab {
     let urlInputRef = null;
     let modelInputRef = null;
     let keyHintEl = null;
-    const presetSetting = new import_obsidian4.Setting(containerEl).setName("Provider Preset").setDesc("Schnellauswahl \u2014 f\xFCllt URL und Modell aus. API Key separat eintragen.");
+    const presetSetting = new import_obsidian5.Setting(containerEl).setName("Provider Preset").setDesc("Schnellauswahl \u2014 f\xFCllt URL und Modell aus. API Key separat eintragen.");
     for (const [label, preset] of Object.entries(presets)) {
       presetSetting.addButton(
         (btn) => btn.setButtonText(label).onClick(async () => {
@@ -1119,18 +1198,18 @@ var RemNoteSettingsTab = class extends import_obsidian4.PluginSettingTab {
             modelInputRef.value = preset.model;
           if (keyHintEl)
             keyHintEl.textContent = `Key-Format: ${preset.keyHint}`;
-          new import_obsidian4.Notice(`\u2713 ${label} geladen`, 2e3);
+          new import_obsidian5.Notice(`\u2713 ${label} geladen`, 2e3);
         })
       );
     }
-    new import_obsidian4.Setting(containerEl).setName("Base URL").setDesc("OpenAI-kompatibler API-Endpunkt.").addText((text) => {
+    new import_obsidian5.Setting(containerEl).setName("Base URL").setDesc("OpenAI-kompatibler API-Endpunkt.").addText((text) => {
       urlInputRef = text.inputEl;
       text.setValue(this.plugin.pluginData.settings.aiBaseUrl).onChange(async (value) => {
         this.plugin.pluginData.settings.aiBaseUrl = value;
         await this.plugin.savePluginData();
       });
     });
-    const keySetting = new import_obsidian4.Setting(containerEl).setName("API Key").setDesc("F\xFCr Ollama: 'ollama'. F\xFCr Cloud-Provider: dein pers\xF6nlicher Key.");
+    const keySetting = new import_obsidian5.Setting(containerEl).setName("API Key").setDesc("F\xFCr Ollama: 'ollama'. F\xFCr Cloud-Provider: dein pers\xF6nlicher Key.");
     keyHintEl = keySetting.descEl.createEl("span", { cls: "remnote-key-hint" });
     keySetting.addText((text) => {
       text.inputEl.type = "password";
@@ -1139,14 +1218,14 @@ var RemNoteSettingsTab = class extends import_obsidian4.PluginSettingTab {
         await this.plugin.savePluginData();
       });
     });
-    new import_obsidian4.Setting(containerEl).setName("Modell").setDesc("Modellname exakt wie vom Provider erwartet.").addText((text) => {
+    new import_obsidian5.Setting(containerEl).setName("Modell").setDesc("Modellname exakt wie vom Provider erwartet.").addText((text) => {
       modelInputRef = text.inputEl;
       text.setValue(this.plugin.pluginData.settings.aiModel).onChange(async (value) => {
         this.plugin.pluginData.settings.aiModel = value;
         await this.plugin.savePluginData();
       });
     });
-    new import_obsidian4.Setting(containerEl).setName("Verbindung testen").setDesc("Sendet eine kurze Testfrage \u2014 best\xE4tigt dass Key, URL und Modell korrekt sind.").addButton(
+    new import_obsidian5.Setting(containerEl).setName("Verbindung testen").setDesc("Sendet eine kurze Testfrage \u2014 best\xE4tigt dass Key, URL und Modell korrekt sind.").addButton(
       (btn) => btn.setButtonText("Test").setCta().onClick(async () => {
         const tmpSettings = { ...this.plugin.pluginData.settings, aiEnabled: true };
         try {
@@ -1155,9 +1234,9 @@ var RemNoteSettingsTab = class extends import_obsidian4.PluginSettingTab {
             "",
             tmpSettings
           );
-          new import_obsidian4.Notice("\u2713 AI OK: " + result.slice(0, 120), 6e3);
+          new import_obsidian5.Notice("\u2713 AI OK: " + result.slice(0, 120), 6e3);
         } catch (e) {
-          new import_obsidian4.Notice("\u2717 AI Fehler: " + e.message, 8e3);
+          new import_obsidian5.Notice("\u2717 AI Fehler: " + e.message, 8e3);
         }
       })
     );
@@ -1207,9 +1286,9 @@ var RemNoteSettingsTab = class extends import_obsidian4.PluginSettingTab {
 };
 
 // src/pdf-panel.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 var PDF_PANEL_VIEW_TYPE = "remnote-pdf-panel";
-var PdfFileSuggest = class extends import_obsidian5.FuzzySuggestModal {
+var PdfFileSuggest = class extends import_obsidian6.FuzzySuggestModal {
   constructor(app, onChoose) {
     super(app);
     this.onChoose = onChoose;
@@ -1225,7 +1304,7 @@ var PdfFileSuggest = class extends import_obsidian5.FuzzySuggestModal {
     this.onChoose(f);
   }
 };
-var PdfPanelView = class extends import_obsidian5.ItemView {
+var PdfPanelView = class extends import_obsidian6.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.notePath = null;
@@ -1394,14 +1473,14 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
     this.statusEl.style.display = "none";
     const pdfPath = this.pdfPaths[this.activeIdx];
     const pdfFile = this.app.vault.getAbstractFileByPath(pdfPath);
-    if (!(pdfFile instanceof import_obsidian5.TFile)) {
-      new import_obsidian5.Notice(`PDF nicht im Vault gefunden: ${pdfPath}`);
+    if (!(pdfFile instanceof import_obsidian6.TFile)) {
+      new import_obsidian6.Notice(`PDF nicht im Vault gefunden: ${pdfPath}`);
       return;
     }
     if (this.pageInput)
       this.pageInput.value = String(this.currentPage);
     const embedSyntax = `![[${pdfPath}#page=${this.currentPage}]]`;
-    await import_obsidian5.MarkdownRenderer.render(
+    await import_obsidian6.MarkdownRenderer.render(
       this.app,
       embedSyntax,
       this.pdfContainer,
@@ -1471,17 +1550,17 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
   insertPageRef() {
     var _a;
     if (this.pdfPaths.length === 0) {
-      new import_obsidian5.Notice("Kein PDF aktiv.");
+      new import_obsidian6.Notice("Kein PDF aktiv.");
       return;
     }
     const pdfName = (_a = this.pdfPaths[this.activeIdx].split("/").pop()) != null ? _a : "";
     const ref = `[[${pdfName}#page=${this.currentPage}|*]]`;
-    const view = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
     if (view == null ? void 0 : view.editor) {
       view.editor.replaceRange(ref, view.editor.getCursor());
-      new import_obsidian5.Notice(`\u2713 Referenz eingef\xFCgt: ${ref}`, 2e3);
+      new import_obsidian6.Notice(`\u2713 Referenz eingef\xFCgt: ${ref}`, 2e3);
     } else {
-      navigator.clipboard.writeText(ref).then(() => new import_obsidian5.Notice(`Referenz kopiert: ${ref}`, 3e3));
+      navigator.clipboard.writeText(ref).then(() => new import_obsidian6.Notice(`Referenz kopiert: ${ref}`, 3e3));
     }
   }
   // ── Public: jump to a specific PDF + page (called from link click handler) ─
@@ -1551,7 +1630,7 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
   async importDroppedPdf(file) {
     var _a, _b, _c;
     if (!this.notePath) {
-      new import_obsidian5.Notice("Keine Notiz ge\xF6ffnet.");
+      new import_obsidian6.Notice("Keine Notiz ge\xF6ffnet.");
       return;
     }
     const fileName = file.name;
@@ -1562,25 +1641,25 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
     if (vaultBase && electronPath.startsWith(vaultBase)) {
       const rel = electronPath.slice(vaultBase.length).replace(/^\//, "");
       await this.linkPdf(rel);
-      new import_obsidian5.Notice(`"${fileName}" ist bereits im Vault \u2014 verkn\xFCpft`, 2e3);
+      new import_obsidian6.Notice(`"${fileName}" ist bereits im Vault \u2014 verkn\xFCpft`, 2e3);
       return;
     }
     if (await this.app.vault.adapter.exists(destPath)) {
       await this.linkPdf(destPath);
-      new import_obsidian5.Notice(`"${fileName}" existiert bereits im Vault \u2014 verkn\xFCpft`, 2e3);
+      new import_obsidian6.Notice(`"${fileName}" existiert bereits im Vault \u2014 verkn\xFCpft`, 2e3);
       return;
     }
     if (!await this.app.vault.adapter.exists(folder))
       await this.app.vault.createFolder(folder);
-    const notice = new import_obsidian5.Notice(`Importiere "${fileName}"\u2026`, 0);
+    const notice = new import_obsidian6.Notice(`Importiere "${fileName}"\u2026`, 0);
     try {
       await this.app.vault.adapter.writeBinary(destPath, await file.arrayBuffer());
       notice.hide();
       await this.linkPdf(destPath);
-      new import_obsidian5.Notice(`\u2713 "${fileName}" \u2192 ${destPath}`, 4e3);
+      new import_obsidian6.Notice(`\u2713 "${fileName}" \u2192 ${destPath}`, 4e3);
     } catch (err) {
       notice.hide();
-      new import_obsidian5.Notice(`Import fehlgeschlagen: ${(_c = err.message) != null ? _c : err}`, 5e3);
+      new import_obsidian6.Notice(`Import fehlgeschlagen: ${(_c = err.message) != null ? _c : err}`, 5e3);
     }
   }
   // ── Link a vault PDF to the current note ─────────────────────────────────
@@ -1597,7 +1676,7 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
     }
     this.pdfPaths.push(vaultPath);
     const noteFile = this.app.vault.getAbstractFileByPath(this.notePath);
-    if (noteFile instanceof import_obsidian5.TFile)
+    if (noteFile instanceof import_obsidian6.TFile)
       await this.saveFrontmatterPdfs(noteFile, [...this.pdfPaths]);
     this.activeIdx = this.pdfPaths.length - 1;
     this.currentPage = 1;
@@ -1635,7 +1714,7 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
   // ── Manage linked PDFs ────────────────────────────────────────────────────
   addPdfFromVault() {
     if (!this.notePath) {
-      new import_obsidian5.Notice("Keine Notiz ge\xF6ffnet.");
+      new import_obsidian6.Notice("Keine Notiz ge\xF6ffnet.");
       return;
     }
     new PdfFileSuggest(this.app, (f) => this.linkPdf(f.path)).open();
@@ -1647,14 +1726,14 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
     this.pdfPaths.splice(this.activeIdx, 1);
     if (this.notePath) {
       const noteFile = this.app.vault.getAbstractFileByPath(this.notePath);
-      if (noteFile instanceof import_obsidian5.TFile)
+      if (noteFile instanceof import_obsidian6.TFile)
         await this.saveFrontmatterPdfs(noteFile, [...this.pdfPaths]);
     }
     this.activeIdx = Math.max(0, this.activeIdx - 1);
     this.currentPage = 1;
     this.refreshTabs();
     this.renderPdf();
-    new import_obsidian5.Notice(`"${removed}" entfernt`, 2e3);
+    new import_obsidian6.Notice(`"${removed}" entfernt`, 2e3);
   }
   isVisible() {
     return this.leaf.view === this;
@@ -1662,7 +1741,7 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
 };
 
 // src/main.ts
-var RemNoteFlashcardsPlugin = class extends import_obsidian6.Plugin {
+var RemNoteFlashcardsPlugin = class extends import_obsidian7.Plugin {
   constructor() {
     super(...arguments);
     this.pluginData = {
@@ -1737,7 +1816,7 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian6.Plugin {
             (f) => f.name === pdfRef || f.path === pdfRef || f.basename === pdfRef
           );
           if (!pdfFile) {
-            new import_obsidian6.Notice(`PDF nicht gefunden: ${pdfRef}`);
+            new import_obsidian7.Notice(`PDF nicht gefunden: ${pdfRef}`);
             return;
           }
           await this.openPdfPanel();
@@ -1757,7 +1836,7 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian6.Plugin {
     });
     this.registerEvent(
       this.app.vault.on("modify", async (file) => {
-        if (file instanceof import_obsidian6.TFile && file.extension === "md") {
+        if (file instanceof import_obsidian7.TFile && file.extension === "md") {
           await this.scanFile(file);
           this.updateBadge();
         }
@@ -1765,7 +1844,7 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian6.Plugin {
     );
     this.registerEvent(
       this.app.vault.on("create", async (file) => {
-        if (file instanceof import_obsidian6.TFile && file.extension === "md") {
+        if (file instanceof import_obsidian7.TFile && file.extension === "md") {
           await this.scanFile(file);
           this.updateBadge();
         }
@@ -1773,7 +1852,7 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian6.Plugin {
     );
     this.registerEvent(
       this.app.vault.on("delete", (file) => {
-        if (file instanceof import_obsidian6.TFile) {
+        if (file instanceof import_obsidian7.TFile) {
           this.allCards = this.allCards.filter((c) => c.filePath !== file.path);
           this.updateBadge();
         }
@@ -1861,7 +1940,7 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian6.Plugin {
           urgentMsg = ` \u2014 ${next.name} in ${days} Tagen`;
         }
       }
-      new import_obsidian6.Notice(
+      new import_obsidian7.Notice(
         `\u{1F4DA} RemNote Flashcards: ${due} Karten heute f\xE4llig${urgentMsg}.
 Klicke auf das Karten-Icon in der Sidebar.`,
         8e3
@@ -1878,13 +1957,13 @@ Klicke auf das Karten-Icon in der Sidebar.`,
   async reviewCurrentNote() {
     const activeFile = this.app.workspace.getActiveFile();
     if (!activeFile) {
-      new import_obsidian6.Notice("Keine aktive Notiz ge\xF6ffnet.");
+      new import_obsidian7.Notice("Keine aktive Notiz ge\xF6ffnet.");
       return;
     }
     await this.scanFile(activeFile);
     const cards = this.allCards.filter((c) => c.filePath === activeFile.path);
     if (cards.length === 0) {
-      new import_obsidian6.Notice("Keine Karteikarten in dieser Notiz.\nVerwende :: oder ::: zum Erstellen.");
+      new import_obsidian7.Notice("Keine Karteikarten in dieser Notiz.\nVerwende :: oder ::: zum Erstellen.");
       return;
     }
     new ReviewModal(this.app, this, cards, this.pluginData).open();
@@ -1904,7 +1983,7 @@ Klicke auf das Karten-Icon in der Sidebar.`,
   ${g.name}: ${due} f\xE4llig / ${total} gesamt`;
       }
     }
-    new import_obsidian6.Notice(
+    new import_obsidian7.Notice(
       `\u{1F4CA} RemNote Flashcards
 
 Gesamt: ${stats.total} Karten
@@ -1936,7 +2015,7 @@ Nach Pr\xFCfung:${groupLines}` : ""),
   pdfInsertRef() {
     const leaves = this.app.workspace.getLeavesOfType(PDF_PANEL_VIEW_TYPE);
     if (leaves.length === 0) {
-      new import_obsidian6.Notice("PDF Panel ist nicht ge\xF6ffnet. \xD6ffne es zuerst mit 'PDF Panel \xF6ffnen'.");
+      new import_obsidian7.Notice("PDF Panel ist nicht ge\xF6ffnet. \xD6ffne es zuerst mit 'PDF Panel \xF6ffnen'.");
       return;
     }
     const view = leaves[0].view;
@@ -1945,7 +2024,7 @@ Nach Pr\xFCfung:${groupLines}` : ""),
   // ── AI Autofill (while writing) ────────────────────────────
   async aiAutofillCard(editor) {
     if (!this.pluginData.settings.aiEnabled) {
-      new import_obsidian6.Notice("AI ist nicht aktiviert. Bitte in Einstellungen \u2192 AI aktivieren.");
+      new import_obsidian7.Notice("AI ist nicht aktiviert. Bitte in Einstellungen \u2192 AI aktivieren.");
       return;
     }
     const cursor = editor.getCursor();
@@ -1956,7 +2035,7 @@ Nach Pr\xFCfung:${groupLines}` : ""),
     if (tripleIdx !== -1) {
       const after = lineText.slice(tripleIdx + 3).trim();
       if (after !== "") {
-        new import_obsidian6.Notice("Diese Zeile hat bereits eine Antwort.");
+        new import_obsidian7.Notice("Diese Zeile hat bereits eine Antwort.");
         return;
       }
       front = lineText.slice(0, tripleIdx).trim();
@@ -1966,7 +2045,7 @@ Nach Pr\xFCfung:${groupLines}` : ""),
       if (basicIdx !== -1) {
         const after = lineText.slice(basicIdx + 2).trim();
         if (after !== "") {
-          new import_obsidian6.Notice("Diese Zeile hat bereits eine Antwort.");
+          new import_obsidian7.Notice("Diese Zeile hat bereits eine Antwort.");
           return;
         }
         front = lineText.slice(0, basicIdx).trim();
@@ -1974,15 +2053,15 @@ Nach Pr\xFCfung:${groupLines}` : ""),
       }
     }
     if (!front) {
-      new import_obsidian6.Notice("Kein :: oder ::: auf dieser Zeile gefunden.\nBeispiel: Frage :: ");
+      new import_obsidian7.Notice("Kein :: oder ::: auf dieser Zeile gefunden.\nBeispiel: Frage :: ");
       return;
     }
-    const notice = new import_obsidian6.Notice("\u2726 AI generiert Antwort...", 0);
+    const notice = new import_obsidian7.Notice("\u2726 AI generiert Antwort...", 0);
     try {
       const answer = await aiGenerateAnswer(front, "", this.pluginData.settings);
       notice.hide();
       if (!answer) {
-        new import_obsidian6.Notice("AI hat keine Antwort zur\xFCckgegeben.");
+        new import_obsidian7.Notice("AI hat keine Antwort zur\xFCckgegeben.");
         return;
       }
       editor.replaceRange(
@@ -1990,10 +2069,10 @@ Nach Pr\xFCfung:${groupLines}` : ""),
         { line: cursor.line, ch: insertPos },
         { line: cursor.line, ch: insertPos }
       );
-      new import_obsidian6.Notice("\u2713 Antwort eingef\xFCgt", 2e3);
+      new import_obsidian7.Notice("\u2713 Antwort eingef\xFCgt", 2e3);
     } catch (e) {
       notice.hide();
-      new import_obsidian6.Notice("AI Fehler: " + e.message);
+      new import_obsidian7.Notice("AI Fehler: " + e.message);
     }
   }
 };
