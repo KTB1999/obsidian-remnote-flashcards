@@ -294,8 +294,7 @@ export class PdfPanelView extends ItemView {
   insertPageRef() {
     if (this.pdfPaths.length === 0) { new Notice("Kein PDF aktiv."); return; }
     const pdfName = this.pdfPaths[this.activeIdx].split("/").pop() ?? "";
-    const baseName = pdfName.replace(/\.pdf$/i, "");
-    const ref      = `[[${pdfName}#page=${this.currentPage}|${baseName} S.${this.currentPage}]]`;
+    const ref = `[[${pdfName}#page=${this.currentPage}|*]]`;
 
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (view?.editor) {

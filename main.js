@@ -1475,8 +1475,7 @@ var PdfPanelView = class extends import_obsidian5.ItemView {
       return;
     }
     const pdfName = (_a = this.pdfPaths[this.activeIdx].split("/").pop()) != null ? _a : "";
-    const baseName = pdfName.replace(/\.pdf$/i, "");
-    const ref = `[[${pdfName}#page=${this.currentPage}|${baseName} S.${this.currentPage}]]`;
+    const ref = `[[${pdfName}#page=${this.currentPage}|*]]`;
     const view = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
     if (view == null ? void 0 : view.editor) {
       view.editor.replaceRange(ref, view.editor.getCursor());
