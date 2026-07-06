@@ -374,6 +374,20 @@ function shuffleArray(arr) {
 }
 var RATING_ICON = { again: "\u{1F534}", hard: "\u{1F7E1}", good: "\u{1F7E2}", easy: "\u{1F535}" };
 var RATING_LABEL = { again: "Wieder", hard: "Schwer", good: "Gut", easy: "Einfach" };
+function cardStatusIcon(card, data, sessionResults) {
+  const entry = sessionResults.find((r) => r.card.id === card.id);
+  if (entry) {
+    if (entry.action === "skip")
+      return "\u23ED";
+    return RATING_ICON[entry.action];
+  }
+  const rec = data.reviews[card.id];
+  if (!rec)
+    return "\u2B1C";
+  if (isDue(rec))
+    return "\u{1F534}";
+  return "\u2705";
+}
 var ReviewModal = class extends import_obsidian.Modal {
   constructor(app, plugin, cards, data, options = {}) {
     super(app);
@@ -413,6 +427,81 @@ var ReviewModal = class extends import_obsidian.Modal {
     };
     this.plugin.savePluginData();
   }
+  // ── Progress row ──────────────────────────────────────────────────────────
+  buildProgressRow(contentEl) {
+    const progressWrap = contentEl.createDiv("remnote-progress-wrap");
+    const progressBar = progressWrap.createDiv("remnote-progress-bar");
+    progressBar.style.width = `${this.currentIndex / this.cards.length * 100}%`;
+    const row = progressWrap.createDiv("remnote-progress-row");
+    const backBtn = row.createEl("button", { cls: "remnote-btn-back" });
+    backBtn.innerHTML = `\u2190 Zur\xFCck`;
+    backBtn.disabled = this.history.length === 0;
+    backBtn.onclick = () => this.goBack();
+    const skipBtn = row.createEl("button", { cls: "remnote-btn-skip" });
+    skipBtn.innerHTML = `\u23ED \xDCberspringen`;
+    skipBtn.onclick = () => this.skipCard();
+    if (this.options.shuffle) {
+      row.createEl("span", { text: "\u{1F500}", cls: "remnote-shuffle-indicator", title: "Zuf\xE4llige Reihenfolge aktiv" });
+    }
+    const counterBtn = row.createEl("button", { cls: "remnote-progress-counter" });
+    counterBtn.setText(`${this.currentIndex + 1} / ${this.cards.length} \u25BE`);
+    counterBtn.onclick = (e) => {
+      e.stopPropagation();
+      this.toggleNavDropdown(counterBtn);
+    };
+  }
+  // ── Navigation dropdown ───────────────────────────────────────────────────
+  toggleNavDropdown(anchor) {
+    const existing = this.contentEl.querySelector(".remnote-nav-dropdown");
+    if (existing) {
+      existing.remove();
+      return;
+    }
+    const dropdown = this.contentEl.createDiv("remnote-nav-dropdown");
+    for (let i = 0; i < this.cards.length; i++) {
+      const card = this.cards[i];
+      const icon = cardStatusIcon(card, this.data, this.sessionResults);
+      const front = card.front.replace(/^#+\s+/, "").slice(0, 50) + (card.front.length > 50 ? "\u2026" : "");
+      const item = dropdown.createDiv("remnote-nav-item" + (i === this.currentIndex ? " current" : ""));
+      item.createSpan({ text: icon, cls: "remnote-nav-icon" });
+      item.createSpan({ text: front, cls: "remnote-nav-front" });
+      item.createSpan({ text: `${i + 1}`, cls: "remnote-nav-num" });
+      item.onclick = () => {
+        dropdown.remove();
+        this.currentIndex = i;
+        this.renderCard();
+      };
+    }
+    setTimeout(() => {
+      const cur = dropdown.querySelector(".remnote-nav-item.current");
+      cur == null ? void 0 : cur.scrollIntoView({ block: "center" });
+    }, 0);
+    const closeHandler = (e) => {
+      if (!dropdown.contains(e.target) && e.target !== anchor) {
+        dropdown.remove();
+        document.removeEventListener("mousedown", closeHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener("mousedown", closeHandler), 0);
+  }
+  // ── Skip ──────────────────────────────────────────────────────────────────
+  skipCard() {
+    const card = this.currentCard;
+    this.sessionResults.push({ card, action: "skip" });
+    this.history.push(this.currentIndex);
+    this.currentIndex++;
+    this.saveProgress();
+    this.renderCard();
+  }
+  // ── Back ──────────────────────────────────────────────────────────────────
+  goBack() {
+    if (this.history.length === 0)
+      return;
+    this.currentIndex = this.history.pop();
+    this.sessionResults.pop();
+    this.renderCard();
+  }
+  // ── Main render ───────────────────────────────────────────────────────────
   async renderCard() {
     const { contentEl } = this;
     contentEl.empty();
@@ -424,16 +513,8 @@ var ReviewModal = class extends import_obsidian.Modal {
       this.renderFinished();
       return;
     }
+    this.buildProgressRow(contentEl);
     const card = this.currentCard;
-    const progressWrap = contentEl.createDiv("remnote-progress-wrap");
-    const progressBar = progressWrap.createDiv("remnote-progress-bar");
-    progressBar.style.width = `${this.currentIndex / this.cards.length * 100}%`;
-    const progressRow = progressWrap.createDiv("remnote-progress-row");
-    const backBtn = progressRow.createEl("button", { cls: "remnote-btn-back" });
-    backBtn.innerHTML = `\u2190 Zur\xFCck`;
-    backBtn.disabled = this.history.length === 0;
-    backBtn.onclick = () => this.goBack();
-    progressRow.createEl("span", { text: `${this.currentIndex + 1} / ${this.cards.length}`, cls: "remnote-progress-text" });
     const topRow = contentEl.createDiv("remnote-top-row");
     const badge = topRow.createDiv("remnote-card-badge");
     badge.setText(card.type === "basic" ? "Karteikarte" : card.type === "multilayer" ? "Mehrschichtig" : "Dropdown");
@@ -442,20 +523,12 @@ var ReviewModal = class extends import_obsidian.Modal {
     sourceBtn.onclick = () => this.openSource(card);
     const frontEl = contentEl.createDiv("remnote-card-front");
     await import_obsidian.MarkdownRenderer.render(this.app, card.front, frontEl, card.filePath, this.plugin);
-    if (card.type === "multilayer") {
+    if (card.type === "multilayer")
       await this.renderMultilayer(contentEl, card);
-    } else if (card.type === "dropdown") {
+    else if (card.type === "dropdown")
       await this.renderDropdown(contentEl, card);
-    } else {
+    else
       await this.renderBasic(contentEl, card);
-    }
-  }
-  goBack() {
-    if (this.history.length === 0)
-      return;
-    this.currentIndex = this.history.pop();
-    this.sessionResults.pop();
-    this.renderCard();
   }
   // ── Basic ─────────────────────────────────────────────────────────────────
   async renderBasic(container, card) {
@@ -655,7 +728,7 @@ var ReviewModal = class extends import_obsidian.Modal {
     const card = this.currentCard;
     const existing = (_a = this.data.reviews[card.id]) != null ? _a : newRecord(card.id);
     this.data.reviews[card.id] = applyRating(existing, rating);
-    this.sessionResults.push({ card, rating });
+    this.sessionResults.push({ card, action: rating });
     this.history.push(this.currentIndex);
     this.currentIndex++;
     await this.plugin.savePluginData();
@@ -681,13 +754,18 @@ var ReviewModal = class extends import_obsidian.Modal {
   renderFinished() {
     const { contentEl } = this;
     contentEl.empty();
+    const rated = this.sessionResults.filter((r) => r.action !== "skip");
+    const skipped = this.sessionResults.filter((r) => r.action === "skip");
     contentEl.createDiv("remnote-finished-icon").setText("\u2713");
     contentEl.createEl("h2", { text: "Sitzung abgeschlossen!", cls: "remnote-finished-title" });
-    contentEl.createEl("p", { text: `${this.sessionResults.length} Karten bearbeitet.`, cls: "remnote-finished-sub" });
-    if (this.sessionResults.length > 0) {
+    contentEl.createEl("p", {
+      text: `${rated.length} bewertet \xB7 ${skipped.length} \xFCbersprungen`,
+      cls: "remnote-finished-sub"
+    });
+    if (rated.length > 0) {
       const counts = { again: 0, hard: 0, good: 0, easy: 0 };
-      for (const r of this.sessionResults)
-        counts[r.rating]++;
+      for (const r of rated)
+        counts[r.action]++;
       const summaryRow = contentEl.createDiv("remnote-finished-summary");
       for (const rating of ["again", "hard", "good", "easy"]) {
         if (counts[rating] === 0)
@@ -695,6 +773,8 @@ var ReviewModal = class extends import_obsidian.Modal {
         const chip = summaryRow.createDiv(`remnote-finished-chip remnote-rating-chip-${rating}`);
         chip.setText(`${RATING_ICON[rating]} ${counts[rating]}\xD7 ${RATING_LABEL[rating]}`);
       }
+    }
+    if (this.sessionResults.length > 0) {
       const tableWrap = contentEl.createDiv("remnote-finished-table-wrap");
       const table = tableWrap.createEl("table", { cls: "remnote-finished-table" });
       const hrow = table.createEl("thead").createEl("tr");
@@ -702,12 +782,17 @@ var ReviewModal = class extends import_obsidian.Modal {
       hrow.createEl("th", { text: "Bewertung" });
       hrow.createEl("th", { text: "N\xE4chste Wdh." });
       const tbody = table.createEl("tbody");
-      for (const { card, rating } of this.sessionResults) {
+      for (const { card, action } of this.sessionResults) {
         const rec = this.data.reviews[card.id];
-        const next = rec ? rec.interval === 1 ? "Morgen" : `In ${rec.interval} Tagen` : "\u2014";
+        const next = action === "skip" ? "\u2014" : rec ? rec.interval === 1 ? "Morgen" : `In ${rec.interval} Tagen` : "\u2014";
         const tr = tbody.createEl("tr");
         tr.createEl("td", { text: card.front.slice(0, 50) + (card.front.length > 50 ? "\u2026" : "") });
-        tr.createEl("td").createSpan({ text: `${RATING_ICON[rating]} ${RATING_LABEL[rating]}`, cls: `remnote-result-badge remnote-rating-${rating}` });
+        const ratingTd = tr.createEl("td");
+        if (action === "skip") {
+          ratingTd.createSpan({ text: "\u23ED \xDCbersprungen", cls: "remnote-result-badge remnote-result-skipped" });
+        } else {
+          ratingTd.createSpan({ text: `${RATING_ICON[action]} ${RATING_LABEL[action]}`, cls: `remnote-result-badge remnote-rating-${action}` });
+        }
         tr.createEl("td", { text: next, cls: "remnote-result-next" });
       }
     }
