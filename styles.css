@@ -217,6 +217,94 @@
   margin-bottom: 20px;
 }
 
+/* ===== PROGRESS ROW (back button + counter) ===== */
+.remnote-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.remnote-btn-back {
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.remnote-btn-back:hover:not(:disabled) { color: var(--text-normal); border-color: var(--text-muted); }
+.remnote-btn-back:disabled              { opacity: 0.35; cursor: default; }
+
+/* ===== FINISHED — PERFORMANCE TABLE ===== */
+.remnote-finished-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.remnote-finished-chip {
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.remnote-rating-chip-again { background: rgba(239,68,68,0.15);  color: #ef4444; }
+.remnote-rating-chip-hard  { background: rgba(234,179,8,0.15);  color: #ca8a04; }
+.remnote-rating-chip-good  { background: rgba(34,197,94,0.15);  color: #16a34a; }
+.remnote-rating-chip-easy  { background: rgba(59,130,246,0.15); color: #2563eb; }
+
+.remnote-finished-table-wrap {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.remnote-finished-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.remnote-finished-table th {
+  position: sticky;
+  top: 0;
+  background: var(--background-secondary);
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.remnote-finished-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+  vertical-align: middle;
+}
+.remnote-finished-table tr:last-child td { border-bottom: none; }
+
+.remnote-result-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.remnote-result-badge.remnote-rating-again { background: rgba(239,68,68,0.15);  color: #ef4444; }
+.remnote-result-badge.remnote-rating-hard  { background: rgba(234,179,8,0.15);  color: #ca8a04; }
+.remnote-result-badge.remnote-rating-good  { background: rgba(34,197,94,0.15);  color: #16a34a; }
+.remnote-result-badge.remnote-rating-easy  { background: rgba(59,130,246,0.15); color: #2563eb; }
+
+.remnote-result-next  { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.remnote-finished-close { margin-top: 4px; }
+
 /* ===== TOP ROW (badge + source) ===== */
 .remnote-top-row {
   display: flex;
@@ -250,6 +338,90 @@
 }
 
 /* ===== SESSION PICKER MODAL ===== */
+.remnote-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.remnote-picker-header h2 { margin: 0; }
+
+.remnote-picker-shuffle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.remnote-picker-shuffle:hover  { border-color: var(--color-accent); color: var(--color-accent); }
+.remnote-picker-shuffle.active { background: var(--color-accent); color: var(--text-on-accent); border-color: var(--color-accent); }
+
+.remnote-resume-row {
+  background: rgba(var(--color-accent-rgb,99,102,241), 0.07);
+  border: 1px solid rgba(var(--color-accent-rgb,99,102,241), 0.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+/* ===== FOLDER BROWSER ===== */
+.remnote-folder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--background-secondary);
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.remnote-folder-row:hover { background: var(--background-modifier-hover); }
+
+.remnote-folder-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.remnote-folder-toggle {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.remnote-folder-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.remnote-folder-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.remnote-folder-meta { font-size: 12px; }
+
+.remnote-folder-files {
+  margin: 0 0 8px 16px;
+  border-left: 2px solid var(--background-modifier-border);
+  padding-left: 8px;
+}
+
 .remnote-picker-modal {
   width: min(680px, 95vw);
   max-height: 85vh;

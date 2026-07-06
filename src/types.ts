@@ -62,11 +62,20 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   pdfAttachmentFolder: "Attachments/PDFs",
 };
 
+export interface SessionState {
+  cardIds: string[];     // ordered card IDs in session
+  currentIndex: number; // next card to show (points PAST last answered)
+  shuffled: boolean;
+  filterId: string;      // "all" | "group:ID" | "file:PATH" | "folder:PATH"
+  filterLabel: string;   // human-readable label for resume display
+}
+
 export interface PluginData {
   settings: PluginSettings;
   reviews: Record<string, ReviewRecord>;  // cardId → ReviewRecord
   lastReminderDate: string;
   pdfLinks: Record<string, string[]>;     // notePath → [pdfPath, ...]
+  lastSession: SessionState | null;
 }
 
 // Helper: does a card's filePath belong to an exam group?

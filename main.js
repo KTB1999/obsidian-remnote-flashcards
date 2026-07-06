@@ -266,14 +266,6 @@ function getSessionCards(session) {
 function cardsForGroup(allCards, group) {
   return allCards.filter((c) => cardBelongsToGroup(c, group));
 }
-function cardsWithoutGroup(allCards, data) {
-  const { examGroups } = data.settings;
-  if (examGroups.length === 0)
-    return allCards;
-  return allCards.filter(
-    (c) => !examGroups.some((g) => cardBelongsToGroup(c, g))
-  );
-}
 function cardsForPath(allCards, filePath) {
   return allCards.filter((c) => c.filePath === filePath);
 }
@@ -372,14 +364,27 @@ Reply in the same language as the question. Use an example if it helps.`;
 }
 
 // src/modal.ts
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+var RATING_ICON = { again: "\u{1F534}", hard: "\u{1F7E1}", good: "\u{1F7E2}", easy: "\u{1F535}" };
+var RATING_LABEL = { again: "Wieder", hard: "Schwer", good: "Gut", easy: "Einfach" };
 var ReviewModal = class extends import_obsidian.Modal {
-  constructor(app, plugin, cards, data) {
+  constructor(app, plugin, cards, data, options = {}) {
     super(app);
     this.currentIndex = 0;
     this.keyHandler = null;
+    this.history = [];
+    this.sessionResults = [];
     this.plugin = plugin;
-    this.cards = cards;
     this.data = data;
+    this.options = options;
+    this.cards = options.shuffle ? shuffleArray(cards) : [...cards];
   }
   onOpen() {
     this.modalEl.addClass("remnote-review-modal");
@@ -391,9 +396,22 @@ var ReviewModal = class extends import_obsidian.Modal {
       this.keyHandler = null;
     }
     this.contentEl.empty();
+    this.plugin.pluginData.lastSession = null;
+    this.plugin.savePluginData();
   }
   get currentCard() {
     return this.cards[this.currentIndex];
+  }
+  saveProgress() {
+    var _a, _b, _c;
+    this.plugin.pluginData.lastSession = {
+      cardIds: this.cards.map((c) => c.id),
+      currentIndex: this.currentIndex,
+      shuffled: (_a = this.options.shuffle) != null ? _a : false,
+      filterId: (_b = this.options.filterId) != null ? _b : "unknown",
+      filterLabel: (_c = this.options.filterLabel) != null ? _c : ""
+    };
+    this.plugin.savePluginData();
   }
   async renderCard() {
     const { contentEl } = this;
@@ -410,7 +428,12 @@ var ReviewModal = class extends import_obsidian.Modal {
     const progressWrap = contentEl.createDiv("remnote-progress-wrap");
     const progressBar = progressWrap.createDiv("remnote-progress-bar");
     progressBar.style.width = `${this.currentIndex / this.cards.length * 100}%`;
-    progressWrap.createEl("span", { text: `${this.currentIndex + 1} / ${this.cards.length}`, cls: "remnote-progress-text" });
+    const progressRow = progressWrap.createDiv("remnote-progress-row");
+    const backBtn = progressRow.createEl("button", { cls: "remnote-btn-back" });
+    backBtn.innerHTML = `\u2190 Zur\xFCck`;
+    backBtn.disabled = this.history.length === 0;
+    backBtn.onclick = () => this.goBack();
+    progressRow.createEl("span", { text: `${this.currentIndex + 1} / ${this.cards.length}`, cls: "remnote-progress-text" });
     const topRow = contentEl.createDiv("remnote-top-row");
     const badge = topRow.createDiv("remnote-card-badge");
     badge.setText(card.type === "basic" ? "Karteikarte" : card.type === "multilayer" ? "Mehrschichtig" : "Dropdown");
@@ -427,7 +450,14 @@ var ReviewModal = class extends import_obsidian.Modal {
       await this.renderBasic(contentEl, card);
     }
   }
-  // ── Basic (flip) card ─────────────────────────────────────────────────────
+  goBack() {
+    if (this.history.length === 0)
+      return;
+    this.currentIndex = this.history.pop();
+    this.sessionResults.pop();
+    this.renderCard();
+  }
+  // ── Basic ─────────────────────────────────────────────────────────────────
   async renderBasic(container, card) {
     const flipBtn = container.createEl("button", { text: "Umdrehen  [Space]", cls: "remnote-btn remnote-btn-reveal" });
     flipBtn.onclick = async () => {
@@ -441,13 +471,16 @@ var ReviewModal = class extends import_obsidian.Modal {
         e.preventDefault();
         flipBtn.click();
       }
+      if (e.key === "Backspace" && !this.isRatingVisible(container)) {
+        e.preventDefault();
+        this.goBack();
+      }
     };
     document.addEventListener("keydown", this.keyHandler);
   }
-  // ── Dropdown (cloze) card ─────────────────────────────────────────────────
+  // ── Dropdown ──────────────────────────────────────────────────────────────
   async renderDropdown(container, card) {
-    const dropEl = container.createDiv("remnote-dropdown-answer");
-    dropEl.addClass("remnote-blurred");
+    const dropEl = container.createDiv("remnote-dropdown-answer remnote-blurred");
     await import_obsidian.MarkdownRenderer.render(this.app, card.back, dropEl, card.filePath, this.plugin);
     const revealBtn = container.createEl("button", { text: "Antwort anzeigen", cls: "remnote-btn remnote-btn-reveal" });
     revealBtn.onclick = () => {
@@ -460,10 +493,14 @@ var ReviewModal = class extends import_obsidian.Modal {
         e.preventDefault();
         revealBtn.click();
       }
+      if (e.key === "Backspace" && !this.isRatingVisible(container)) {
+        e.preventDefault();
+        this.goBack();
+      }
     };
     document.addEventListener("keydown", this.keyHandler);
   }
-  // ── Multilayer card ───────────────────────────────────────────────────────
+  // ── Multilayer ────────────────────────────────────────────────────────────
   async renderMultilayer(container, card) {
     const revealBtn = container.createEl("button", { text: "Unterfragen anzeigen  [Space]", cls: "remnote-btn remnote-btn-reveal" });
     revealBtn.onclick = async () => {
@@ -477,17 +514,13 @@ var ReviewModal = class extends import_obsidian.Modal {
         e.preventDefault();
         revealBtn.click();
       }
+      if (e.key === "Backspace" && !this.isRatingVisible(container)) {
+        e.preventDefault();
+        this.goBack();
+      }
     };
     document.addEventListener("keydown", this.keyHandler);
   }
-  /**
-   * Render multilayer back content.
-   * Lines matching `- Question :: Answer` become interactive rows:
-   *   - Question is always visible
-   *   - Answer is blurred, click to reveal
-   * Lines with `:::` get a nested sub-section toggle.
-   * Plain lines render as normal markdown.
-   */
   async renderMultilayerBack(back, container, filePath) {
     var _a, _b, _c, _d, _e, _f;
     const lines = back.split("\n");
@@ -508,9 +541,8 @@ var ReviewModal = class extends import_obsidian.Modal {
         const subLines = [];
         let j = i + 1;
         while (j < lines.length) {
-          const nextTrimmed = lines[j].trim();
           const nextIndent = (_f = (_e = (_d = lines[j].match(/^(\s*)/)) == null ? void 0 : _d[1]) == null ? void 0 : _e.length) != null ? _f : 0;
-          if (!nextTrimmed || nextIndent <= indent)
+          if (!lines[j].trim() || nextIndent <= indent)
             break;
           subLines.push(lines[j]);
           j++;
@@ -609,6 +641,12 @@ var ReviewModal = class extends import_obsidian.Modal {
         document.removeEventListener("keydown", this.keyHandler);
         this.keyHandler = null;
       }
+      if (e.key === "Backspace") {
+        e.preventDefault();
+        document.removeEventListener("keydown", this.keyHandler);
+        this.keyHandler = null;
+        this.goBack();
+      }
     };
     document.addEventListener("keydown", this.keyHandler);
   }
@@ -617,8 +655,11 @@ var ReviewModal = class extends import_obsidian.Modal {
     const card = this.currentCard;
     const existing = (_a = this.data.reviews[card.id]) != null ? _a : newRecord(card.id);
     this.data.reviews[card.id] = applyRating(existing, rating);
-    await this.plugin.savePluginData();
+    this.sessionResults.push({ card, rating });
+    this.history.push(this.currentIndex);
     this.currentIndex++;
+    await this.plugin.savePluginData();
+    this.saveProgress();
     await this.renderCard();
   }
   async openSource(card) {
@@ -636,13 +677,41 @@ var ReviewModal = class extends import_obsidian.Modal {
       view.editor.scrollIntoView({ from: { line: card.line, ch: 0 }, to: { line: card.line, ch: 999 } }, true);
     }
   }
+  // ── End-of-session performance view ──────────────────────────────────────
   renderFinished() {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.createDiv("remnote-finished-icon").setText("\u2713");
     contentEl.createEl("h2", { text: "Sitzung abgeschlossen!", cls: "remnote-finished-title" });
-    contentEl.createEl("p", { text: `${this.cards.length} Karten bearbeitet.`, cls: "remnote-finished-sub" });
-    const doneBtn = contentEl.createEl("button", { text: "Schlie\xDFen", cls: "remnote-btn remnote-btn-reveal" });
+    contentEl.createEl("p", { text: `${this.sessionResults.length} Karten bearbeitet.`, cls: "remnote-finished-sub" });
+    if (this.sessionResults.length > 0) {
+      const counts = { again: 0, hard: 0, good: 0, easy: 0 };
+      for (const r of this.sessionResults)
+        counts[r.rating]++;
+      const summaryRow = contentEl.createDiv("remnote-finished-summary");
+      for (const rating of ["again", "hard", "good", "easy"]) {
+        if (counts[rating] === 0)
+          continue;
+        const chip = summaryRow.createDiv(`remnote-finished-chip remnote-rating-chip-${rating}`);
+        chip.setText(`${RATING_ICON[rating]} ${counts[rating]}\xD7 ${RATING_LABEL[rating]}`);
+      }
+      const tableWrap = contentEl.createDiv("remnote-finished-table-wrap");
+      const table = tableWrap.createEl("table", { cls: "remnote-finished-table" });
+      const hrow = table.createEl("thead").createEl("tr");
+      hrow.createEl("th", { text: "Karte" });
+      hrow.createEl("th", { text: "Bewertung" });
+      hrow.createEl("th", { text: "N\xE4chste Wdh." });
+      const tbody = table.createEl("tbody");
+      for (const { card, rating } of this.sessionResults) {
+        const rec = this.data.reviews[card.id];
+        const next = rec ? rec.interval === 1 ? "Morgen" : `In ${rec.interval} Tagen` : "\u2014";
+        const tr = tbody.createEl("tr");
+        tr.createEl("td", { text: card.front.slice(0, 50) + (card.front.length > 50 ? "\u2026" : "") });
+        tr.createEl("td").createSpan({ text: `${RATING_ICON[rating]} ${RATING_LABEL[rating]}`, cls: `remnote-result-badge remnote-rating-${rating}` });
+        tr.createEl("td", { text: next, cls: "remnote-result-next" });
+      }
+    }
+    const doneBtn = contentEl.createEl("button", { text: "Schlie\xDFen", cls: "remnote-btn remnote-btn-reveal remnote-finished-close" });
     doneBtn.onclick = () => this.close();
   }
 };
@@ -652,6 +721,7 @@ var import_obsidian2 = require("obsidian");
 var SessionPickerModal = class extends import_obsidian2.Modal {
   constructor(app, plugin, allCards) {
     super(app);
+    this.shuffled = false;
     this.plugin = plugin;
     this.allCards = allCards;
   }
@@ -662,12 +732,61 @@ var SessionPickerModal = class extends import_obsidian2.Modal {
   onClose() {
     this.contentEl.empty();
   }
+  launch(cards, filterId, filterLabel) {
+    this.close();
+    new ReviewModal(this.app, this.plugin, cards, this.plugin.pluginData, {
+      shuffle: this.shuffled,
+      filterId,
+      filterLabel
+    }).open();
+  }
   render() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h2", { text: "Lernsitzung starten", cls: "remnote-picker-title" });
     const data = this.plugin.pluginData;
     const groups = data.settings.examGroups;
+    const header = contentEl.createDiv("remnote-picker-header");
+    header.createEl("h2", { text: "Lernsitzung starten", cls: "remnote-picker-title" });
+    const shuffleBtn = header.createEl("button", {
+      cls: "remnote-picker-shuffle" + (this.shuffled ? " active" : ""),
+      title: "Reihenfolge zuf\xE4llig mischen"
+    });
+    shuffleBtn.innerHTML = `\u{1F500} Zuf\xE4llig`;
+    shuffleBtn.onclick = () => {
+      this.shuffled = !this.shuffled;
+      shuffleBtn.toggleClass("active", this.shuffled);
+    };
+    const saved = data.lastSession;
+    if (saved && saved.currentIndex < saved.cardIds.length) {
+      const remaining = saved.cardIds.length - saved.currentIndex;
+      contentEl.createEl("h3", { text: "Weitermachen", cls: "remnote-picker-section" });
+      const row = contentEl.createDiv("remnote-picker-row remnote-resume-row");
+      const info = row.createDiv("remnote-picker-info");
+      info.createEl("div", { text: `\u{1F504} ${saved.filterLabel || "Letzte Sitzung"}`, cls: "remnote-picker-name" });
+      info.createDiv("remnote-picker-meta").createEl("span", {
+        text: `${remaining} Karte${remaining !== 1 ? "n" : ""} \xFCbrig \xB7 Karte ${saved.currentIndex + 1} / ${saved.cardIds.length}`,
+        cls: "remnote-picker-due"
+      });
+      const resumeBtn = row.createEl("button", { text: `Weitermachen (${remaining})`, cls: "remnote-btn remnote-picker-btn" });
+      resumeBtn.onclick = () => {
+        const idMap = new Map(this.allCards.map((c) => [c.id, c]));
+        const resumeCards = saved.cardIds.slice(saved.currentIndex).map((id) => idMap.get(id)).filter((c) => c !== void 0);
+        if (resumeCards.length === 0) {
+          new import_obsidian2.Notice("Keine Karten mehr gefunden \u2014 Session neu starten.");
+          data.lastSession = null;
+          this.plugin.savePluginData();
+          this.render();
+          return;
+        }
+        this.close();
+        new ReviewModal(this.app, this.plugin, resumeCards, data, {
+          shuffle: false,
+          // preserve original order when resuming
+          filterId: saved.filterId,
+          filterLabel: saved.filterLabel
+        }).open();
+      };
+    }
     if (groups.length > 0) {
       contentEl.createEl("h3", { text: "Pr\xFCfungen", cls: "remnote-picker-section" });
       for (const group of groups) {
@@ -680,12 +799,11 @@ var SessionPickerModal = class extends import_obsidian2.Modal {
         const info = row.createDiv("remnote-picker-info");
         info.createEl("div", { text: group.name, cls: "remnote-picker-name" });
         const meta = info.createDiv("remnote-picker-meta");
-        if (daysLeft !== null) {
-          const dayEl = meta.createEl("span", {
+        if (daysLeft !== null)
+          meta.createEl("span", {
             text: daysLeft > 0 ? `\u{1F4C5} ${daysLeft} Tage` : daysLeft === 0 ? "\u{1F4C5} Heute!" : "\u26A0\uFE0F Vorbei",
             cls: daysLeft <= 3 ? "remnote-picker-urgent" : "remnote-picker-day"
           });
-        }
         meta.createEl("span", { text: ` \xB7 ${today} heute`, cls: "remnote-picker-due" });
         meta.createEl("span", { text: ` \xB7 ${stats.unseen} neu`, cls: "remnote-picker-new" });
         meta.createEl("span", { text: ` \xB7 ${stats.total} gesamt`, cls: "remnote-picker-total" });
@@ -694,16 +812,11 @@ var SessionPickerModal = class extends import_obsidian2.Modal {
           cls: today > 0 ? "remnote-btn remnote-picker-btn" : "remnote-btn remnote-picker-btn-done"
         });
         startBtn.disabled = today === 0;
-        startBtn.onclick = () => {
-          this.close();
-          const cards = getSessionCards(session);
-          new ReviewModal(this.app, this.plugin, cards, data).open();
-        };
+        startBtn.onclick = () => this.launch(getSessionCards(session), `group:${group.id}`, group.name);
       }
     }
     contentEl.createEl("h3", { text: "Weitere Optionen", cls: "remnote-picker-section" });
     {
-      const ungroupedCards = groups.length > 0 ? cardsWithoutGroup(this.allCards, data) : this.allCards;
       const sessionAll = buildDailySession(this.allCards, data);
       const todayAll = sessionAll.dueCards.length + sessionAll.newCards.length;
       const row = contentEl.createDiv("remnote-picker-row");
@@ -718,10 +831,7 @@ var SessionPickerModal = class extends import_obsidian2.Modal {
         cls: todayAll > 0 ? "remnote-btn remnote-picker-btn" : "remnote-btn remnote-picker-btn-done"
       });
       btn.disabled = todayAll === 0;
-      btn.onclick = () => {
-        this.close();
-        new ReviewModal(this.app, this.plugin, getSessionCards(sessionAll), data).open();
-      };
+      btn.onclick = () => this.launch(getSessionCards(sessionAll), "all", "Alle Karten");
     }
     {
       const activeFile = this.app.workspace.getActiveFile();
@@ -730,7 +840,7 @@ var SessionPickerModal = class extends import_obsidian2.Modal {
         const stats = getStats(noteCards, data);
         const row = contentEl.createDiv("remnote-picker-row");
         const info = row.createDiv("remnote-picker-info");
-        info.createEl("div", { text: `Aktive Notiz`, cls: "remnote-picker-name" });
+        info.createEl("div", { text: "Aktive Notiz", cls: "remnote-picker-name" });
         info.createDiv("remnote-picker-meta").createEl("span", {
           text: `${activeFile.basename} \xB7 ${stats.due} f\xE4llig \xB7 ${stats.total} gesamt`,
           cls: "remnote-picker-total"
@@ -740,54 +850,81 @@ var SessionPickerModal = class extends import_obsidian2.Modal {
           cls: "remnote-btn remnote-picker-btn"
         });
         btn.disabled = noteCards.length === 0;
-        btn.onclick = () => {
-          this.close();
-          new ReviewModal(this.app, this.plugin, noteCards, data).open();
-        };
+        btn.onclick = () => this.launch(noteCards, `file:${activeFile.path}`, activeFile.basename);
       }
     }
-    contentEl.createEl("h3", { text: "Notiz ausw\xE4hlen", cls: "remnote-picker-section" });
-    this.renderFileBrowser(contentEl);
+    contentEl.createEl("h3", { text: "Nach Ordner / Notiz", cls: "remnote-picker-section" });
+    this.renderFolderBrowser(contentEl);
   }
-  renderFileBrowser(container) {
-    var _a, _b;
+  renderFolderBrowser(container) {
+    var _a, _b, _c;
     const data = this.plugin.pluginData;
-    const byFile = /* @__PURE__ */ new Map();
+    const byFolder = /* @__PURE__ */ new Map();
     for (const card of this.allCards) {
-      if (!byFile.has(card.filePath))
-        byFile.set(card.filePath, []);
-      byFile.get(card.filePath).push(card);
+      const lastSlash = card.filePath.lastIndexOf("/");
+      const folder = lastSlash !== -1 ? card.filePath.slice(0, lastSlash) : "(root)";
+      if (!byFolder.has(folder))
+        byFolder.set(folder, /* @__PURE__ */ new Map());
+      const folderMap = byFolder.get(folder);
+      if (!folderMap.has(card.filePath))
+        folderMap.set(card.filePath, []);
+      folderMap.get(card.filePath).push(card);
     }
-    if (byFile.size === 0) {
+    if (byFolder.size === 0) {
       container.createEl("p", { text: "Keine Karteikarten im Vault gefunden.", cls: "remnote-picker-empty" });
       return;
     }
-    const fileList = container.createDiv("remnote-file-list");
-    const sorted = [...byFile.entries()].sort(([, a], [, b]) => {
-      const dueA = getStats(a, data).due;
-      const dueB = getStats(b, data).due;
+    const sortedFolders = [...byFolder.entries()].sort(([, aMap], [, bMap]) => {
+      const dueA = getStats([...aMap.values()].flat(), data).due;
+      const dueB = getStats([...bMap.values()].flat(), data).due;
       return dueB - dueA;
     });
-    for (const [filePath, cards] of sorted) {
-      const stats = getStats(cards, data);
-      const fileName = (_b = (_a = filePath.split("/").pop()) == null ? void 0 : _a.replace(".md", "")) != null ? _b : filePath;
-      const row = fileList.createDiv("remnote-picker-row remnote-file-row");
-      const info = row.createDiv("remnote-picker-info");
-      info.createEl("div", { text: fileName, cls: "remnote-picker-name remnote-picker-name-sm" });
-      const meta = info.createDiv("remnote-picker-meta");
-      if (stats.due > 0)
-        meta.createEl("span", { text: `${stats.due} f\xE4llig`, cls: "remnote-picker-due" });
-      if (stats.unseen > 0)
-        meta.createEl("span", { text: ` \xB7 ${stats.unseen} neu`, cls: "remnote-picker-new" });
-      meta.createEl("span", { text: ` \xB7 ${stats.total} gesamt`, cls: "remnote-picker-total" });
-      const btn = row.createEl("button", {
-        text: "Lernen",
+    for (const [folder, fileMap] of sortedFolders) {
+      const folderCards = [...fileMap.values()].flat();
+      const folderStats = getStats(folderCards, data);
+      const folderName = folder === "(root)" ? "Vault-Wurzel" : (_a = folder.split("/").pop()) != null ? _a : folder;
+      const folderRow = container.createDiv("remnote-folder-row");
+      const folderLeft = folderRow.createDiv("remnote-folder-left");
+      const toggleEl = folderLeft.createSpan({ text: "\u25B6", cls: "remnote-folder-toggle" });
+      const folderInfo = folderLeft.createDiv("remnote-folder-info");
+      folderInfo.createEl("span", { text: `\u{1F4C1} ${folderName}`, cls: "remnote-folder-name" });
+      const folderMeta = folderInfo.createEl("span", { cls: "remnote-folder-meta" });
+      if (folderStats.due > 0)
+        folderMeta.createSpan({ text: ` ${folderStats.due} f\xE4llig`, cls: "remnote-picker-due" });
+      if (folderStats.unseen > 0)
+        folderMeta.createSpan({ text: ` \xB7 ${folderStats.unseen} neu`, cls: "remnote-picker-new" });
+      folderMeta.createSpan({ text: ` \xB7 ${folderStats.total} gesamt`, cls: "remnote-picker-total" });
+      const folderBtn = folderRow.createEl("button", {
+        text: `\u{1F4C1} Ordner lernen (${folderCards.length})`,
         cls: "remnote-btn remnote-picker-btn-sm"
       });
-      btn.onclick = () => {
-        this.close();
-        new ReviewModal(this.app, this.plugin, cards, data).open();
+      folderBtn.onclick = () => this.launch(folderCards, `folder:${folder}`, folderName);
+      const fileList = container.createDiv("remnote-folder-files");
+      fileList.style.display = "none";
+      const sortedFiles = [...fileMap.entries()].sort(
+        ([, a], [, b]) => getStats(b, data).due - getStats(a, data).due
+      );
+      for (const [filePath, cards] of sortedFiles) {
+        const stats = getStats(cards, data);
+        const fileName = (_c = (_b = filePath.split("/").pop()) == null ? void 0 : _b.replace(".md", "")) != null ? _c : filePath;
+        const row = fileList.createDiv("remnote-picker-row remnote-file-row");
+        const info = row.createDiv("remnote-picker-info");
+        info.createEl("div", { text: fileName, cls: "remnote-picker-name remnote-picker-name-sm" });
+        const meta = info.createDiv("remnote-picker-meta");
+        if (stats.due > 0)
+          meta.createEl("span", { text: `${stats.due} f\xE4llig`, cls: "remnote-picker-due" });
+        if (stats.unseen > 0)
+          meta.createEl("span", { text: ` \xB7 ${stats.unseen} neu`, cls: "remnote-picker-new" });
+        meta.createEl("span", { text: ` \xB7 ${stats.total} gesamt`, cls: "remnote-picker-total" });
+        const btn = row.createEl("button", { text: "Lernen", cls: "remnote-btn remnote-picker-btn-sm" });
+        btn.onclick = () => this.launch(cards, `file:${filePath}`, fileName);
+      }
+      const toggleCollapse = () => {
+        const open = fileList.style.display !== "none";
+        fileList.style.display = open ? "none" : "block";
+        toggleEl.setText(open ? "\u25B6" : "\u25BC");
       };
+      folderLeft.onclick = toggleCollapse;
     }
   }
 };
@@ -1824,7 +1961,8 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian7.Plugin {
       settings: { ...DEFAULT_SETTINGS },
       reviews: {},
       lastReminderDate: "",
-      pdfLinks: {}
+      pdfLinks: {},
+      lastSession: null
     };
     this.allCards = [];
     this.ribbonBadgeEl = null;
@@ -1940,14 +2078,15 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian7.Plugin {
   }
   // ── Data persistence ───────────────────────────────────────
   async loadPluginData() {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     const raw = await this.loadData();
     if (raw) {
       this.pluginData = {
         settings: { ...DEFAULT_SETTINGS, ...raw.settings },
         reviews: (_a = raw.reviews) != null ? _a : {},
         lastReminderDate: (_b = raw.lastReminderDate) != null ? _b : "",
-        pdfLinks: (_c = raw.pdfLinks) != null ? _c : {}
+        pdfLinks: (_c = raw.pdfLinks) != null ? _c : {},
+        lastSession: (_d = raw.lastSession) != null ? _d : null
       };
       const s = this.pluginData.settings;
       if (s.examDate && this.pluginData.settings.examGroups.length === 0) {

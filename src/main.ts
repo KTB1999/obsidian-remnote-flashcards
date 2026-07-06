@@ -16,6 +16,7 @@ export default class RemNoteFlashcardsPlugin extends Plugin {
     reviews: {},
     lastReminderDate: "",
     pdfLinks: {},
+    lastSession: null,
   };
 
   allCards: Flashcard[] = [];
@@ -172,6 +173,7 @@ export default class RemNoteFlashcardsPlugin extends Plugin {
         reviews: raw.reviews ?? {},
         lastReminderDate: raw.lastReminderDate ?? "",
         pdfLinks: raw.pdfLinks ?? {},
+        lastSession: raw.lastSession ?? null,
       };
       // Migrate old single examDate field
       const s = this.pluginData.settings as any;

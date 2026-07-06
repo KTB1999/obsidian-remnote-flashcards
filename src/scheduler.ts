@@ -81,6 +81,12 @@ export function cardsForPath(allCards: Flashcard[], filePath: string): Flashcard
   return allCards.filter((c) => c.filePath === filePath);
 }
 
+// Get cards for all notes inside a vault folder
+export function cardsForFolder(allCards: Flashcard[], folderPath: string): Flashcard[] {
+  const prefix = folderPath.endsWith("/") ? folderPath : folderPath + "/";
+  return allCards.filter((c) => c.filePath.startsWith(prefix));
+}
+
 export function getStats(cards: Flashcard[], data: PluginData) {
   const reviews = data.reviews;
   let learned = 0;
