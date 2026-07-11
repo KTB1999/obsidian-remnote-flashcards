@@ -1579,7 +1579,7 @@ var PdfMultiSelectModal = class extends import_obsidian6.Modal {
           return;
         for (let i = 0; i < input.files.length; i++)
           this.pendingDeviceFiles.push(input.files[i]);
-        uploadLabel.textContent = `${this.pendingDeviceFiles.length} Datei(en) ausgew\xE4hlt`;
+        uploadLabel.textContent = this.pendingDeviceFiles.length + " Datei(en) ausgew\xE4hlt";
       };
       input.click();
     };
@@ -1604,12 +1604,14 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     this.pdfPaths = [];
     this.activeIdx = 0;
     this.currentPage = 1;
+    this.saveTimer = null;
+    this.renderRetry = 0;
     // DOM refs
     this.tabBar = null;
+    this.pdfNameEl = null;
     this.pageInput = null;
     this.statusEl = null;
     this.pdfContainer = null;
-    // Obsidian embed lives here
     this.dropOverlay = null;
     this.plugin = plugin;
   }
@@ -1629,58 +1631,136 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     this.syncToActiveNote();
   }
   async onClose() {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
     this.contentEl.empty();
   }
+  // ── Robust 4-level file resolver ──────────────────────────────────────────
+  resolveFile(vaultPath) {
+    var _a;
+    const all = this.app.vault.getFiles();
+    const exact = all.find((f) => f.path === vaultPath);
+    if (exact)
+      return exact;
+    const lower = vaultPath.toLowerCase();
+    const byCI = all.find((f) => f.path.toLowerCase() === lower);
+    if (byCI) {
+      this.healPath(vaultPath, byCI.path);
+      return byCI;
+    }
+    const filename = (_a = vaultPath.split("/").pop()) != null ? _a : "";
+    if (!filename)
+      return null;
+    const byName = all.find((f) => f.name === filename);
+    if (byName) {
+      this.healPath(vaultPath, byName.path);
+      return byName;
+    }
+    const filenameLower = filename.toLowerCase();
+    const byNameCI = all.find((f) => f.name.toLowerCase() === filenameLower);
+    if (byNameCI) {
+      this.healPath(vaultPath, byNameCI.path);
+      return byNameCI;
+    }
+    return null;
+  }
+  /** Auto-heal: update stored path when file is found at a different location */
+  healPath(oldPath, newPath) {
+    const idx = this.pdfPaths.indexOf(oldPath);
+    if (idx !== -1)
+      this.pdfPaths[idx] = newPath;
+    this.scheduleSave();
+  }
+  // ── Frontmatter I/O ──────────────────────────────────────────────────────
+  readFrontmatterState(file) {
+    var _a, _b;
+    const fm = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter;
+    let paths = [];
+    const raw = fm == null ? void 0 : fm["pdf-links"];
+    if (raw != null) {
+      paths = (Array.isArray(raw) ? raw : [raw]).filter((p) => typeof p === "string");
+    } else {
+      const legacy = (_b = this.plugin.pluginData.pdfLinks) == null ? void 0 : _b[file.path];
+      if (legacy == null ? void 0 : legacy.length)
+        paths = [...legacy];
+    }
+    return {
+      paths,
+      lastPath: typeof (fm == null ? void 0 : fm["pdf-last"]) === "string" ? fm["pdf-last"] : null,
+      lastPage: typeof (fm == null ? void 0 : fm["pdf-last-page"]) === "number" ? fm["pdf-last-page"] : 1
+    };
+  }
+  async writeFrontmatterState(file) {
+    var _a, _b;
+    const lastPdfPath = (_a = this.pdfPaths[this.activeIdx]) != null ? _a : null;
+    try {
+      await this.app.fileManager.processFrontMatter(file, (fm) => {
+        if (this.pdfPaths.length > 0)
+          fm["pdf-links"] = [...this.pdfPaths];
+        else
+          delete fm["pdf-links"];
+        if (lastPdfPath) {
+          fm["pdf-last"] = lastPdfPath;
+          fm["pdf-last-page"] = this.currentPage;
+        } else {
+          delete fm["pdf-last"];
+          delete fm["pdf-last-page"];
+        }
+      });
+      if ((_b = this.plugin.pluginData.pdfLinks) == null ? void 0 : _b[file.path]) {
+        delete this.plugin.pluginData.pdfLinks[file.path];
+        await this.plugin.savePluginData();
+      }
+    } catch (e) {
+      if (this.pdfPaths.length > 0)
+        this.plugin.pluginData.pdfLinks[file.path] = [...this.pdfPaths];
+      else
+        delete this.plugin.pluginData.pdfLinks[file.path];
+      await this.plugin.savePluginData();
+    }
+  }
+  /** Debounced save — for page navigation and auto-heal path updates */
+  scheduleSave() {
+    if (this.saveTimer)
+      clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.saveNow(), 800);
+  }
+  /** Immediate save — flushes any pending debounced save */
+  async saveNow() {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    if (!this.notePath)
+      return;
+    const noteFile = this.app.vault.getAbstractFileByPath(this.notePath);
+    if (noteFile instanceof import_obsidian6.TFile)
+      await this.writeFrontmatterState(noteFile);
+  }
   // ── Sync to whichever note is open ───────────────────────────────────────
-  syncToActiveNote() {
+  async syncToActiveNote() {
     const active = this.app.workspace.getActiveFile();
     if (!active || active.extension !== "md")
       return;
     if (active.path === this.notePath)
       return;
+    if (this.saveTimer)
+      await this.saveNow();
     this.notePath = active.path;
-    this.pdfPaths = this.readFrontmatterPdfs(active);
-    this.activeIdx = 0;
-    this.currentPage = 1;
+    const { paths, lastPath, lastPage } = this.readFrontmatterState(active);
+    this.pdfPaths = paths;
+    if (lastPath && paths.includes(lastPath)) {
+      this.activeIdx = paths.indexOf(lastPath);
+      this.currentPage = lastPage;
+    } else {
+      this.activeIdx = 0;
+      this.currentPage = 1;
+    }
+    this.renderRetry = 0;
     this.refreshTabs();
     this.renderPdf();
-  }
-  /** Read pdf-links from note frontmatter. Falls back to data.json for migration. */
-  readFrontmatterPdfs(file) {
-    var _a, _b;
-    const cache = this.app.metadataCache.getFileCache(file);
-    const raw = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a["pdf-links"];
-    if (raw != null) {
-      return (Array.isArray(raw) ? raw : [raw]).filter((p) => typeof p === "string");
-    }
-    const legacy = (_b = this.plugin.pluginData.pdfLinks) == null ? void 0 : _b[file.path];
-    if (legacy == null ? void 0 : legacy.length) {
-      this.saveFrontmatterPdfs(file, legacy);
-      return [...legacy];
-    }
-    return [];
-  }
-  /** Write pdf-links array into the note's YAML frontmatter. */
-  async saveFrontmatterPdfs(file, paths) {
-    var _a;
-    try {
-      await this.app.fileManager.processFrontMatter(file, (fm) => {
-        if (paths.length > 0)
-          fm["pdf-links"] = paths;
-        else
-          delete fm["pdf-links"];
-      });
-      if ((_a = this.plugin.pluginData.pdfLinks) == null ? void 0 : _a[file.path]) {
-        delete this.plugin.pluginData.pdfLinks[file.path];
-        await this.plugin.savePluginData();
-      }
-    } catch (e) {
-      if (paths.length > 0)
-        this.plugin.pluginData.pdfLinks[file.path] = paths;
-      else
-        delete this.plugin.pluginData.pdfLinks[file.path];
-      await this.plugin.savePluginData();
-    }
   }
   // ── Build the static DOM shell ────────────────────────────────────────────
   buildShell() {
@@ -1691,14 +1771,14 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     this.tabBar = toolbar.createDiv("remnote-pdf-tabs");
     const btnRow = toolbar.createDiv("remnote-pdf-btn-row");
     const addBtn = btnRow.createEl("button", { cls: "remnote-pdf-btn", title: "PDF aus Vault hinzuf\xFCgen" });
-    addBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> PDF`;
+    addBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> PDF';
     addBtn.onclick = () => this.addPdfFromVault();
     const delBtn = btnRow.createEl("button", { cls: "remnote-pdf-btn remnote-pdf-btn-danger", title: "Dieses PDF entfernen" });
-    delBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
+    delBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
     delBtn.onclick = () => this.removeActivePdf();
     const navBar = contentEl.createDiv("remnote-pdf-nav");
     const prevBtn = navBar.createEl("button", { cls: "remnote-pdf-nav-btn", title: "Vorherige Seite (Alt+\u2190)" });
-    prevBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>`;
+    prevBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>';
     prevBtn.onclick = () => this.gotoPage(this.currentPage - 1);
     navBar.createEl("span", { text: "Seite", cls: "remnote-pdf-page-label" });
     this.pageInput = navBar.createEl("input", { type: "number", cls: "remnote-pdf-page-input", value: "1" });
@@ -1713,11 +1793,11 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
         e.target.blur();
     };
     const nextBtn = navBar.createEl("button", { cls: "remnote-pdf-nav-btn", title: "N\xE4chste Seite (Alt+\u2192)" });
-    nextBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>`;
+    nextBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>';
     nextBtn.onclick = () => this.gotoPage(this.currentPage + 1);
-    navBar.createDiv("remnote-pdf-nav-spacer");
-    const linkBtn = navBar.createEl("button", { cls: "remnote-pdf-btn remnote-pdf-btn-link", title: "[[pdf#page=N]] in Notiz einf\xFCgen" });
-    linkBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Seite verkn\xFCpfen`;
+    this.pdfNameEl = navBar.createEl("span", { cls: "remnote-pdf-name-display", text: "" });
+    const linkBtn = navBar.createEl("button", { cls: "remnote-pdf-btn remnote-pdf-btn-link", title: "[[pdf#page=N|*]] in Notiz einf\xFCgen" });
+    linkBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Seite verkn\xFCpfen';
     linkBtn.onclick = () => this.insertPageRef();
     this.registerDomEvent(document, "keydown", (e) => {
       if (!this.isVisible())
@@ -1737,16 +1817,92 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     this.statusEl = mainArea.createDiv("remnote-pdf-status");
     this.pdfContainer = mainArea.createDiv("remnote-pdf-container");
     this.dropOverlay = mainArea.createDiv("remnote-pdf-drop-overlay");
-    this.dropOverlay.innerHTML = `
-      <div class="remnote-pdf-drop-icon">\u{1F4E5}</div>
-      <div class="remnote-pdf-drop-title">PDF hier ablegen</div>
-      <div class="remnote-pdf-drop-sub">Wird in Vault importiert und verkn\xFCpft</div>
-    `;
+    this.dropOverlay.innerHTML = '<div class="remnote-pdf-drop-icon">\u{1F4E5}</div><div class="remnote-pdf-drop-title">PDF hier ablegen</div><div class="remnote-pdf-drop-sub">Wird in Vault importiert und verkn\xFCpft</div>';
     this.attachDragDrop(mainArea);
     this.refreshTabs();
     this.renderPdf();
   }
-  // ── Render PDF using Obsidian's native embed ──────────────────────────────
+  // ── Tab bar with ◄ ► sort buttons on the active tab ──────────────────────
+  refreshTabs() {
+    var _a, _b;
+    if (!this.tabBar)
+      return;
+    this.tabBar.empty();
+    if (this.pdfPaths.length === 0) {
+      this.tabBar.createEl("span", {
+        text: this.notePath ? "Kein PDF \u2014 PDF reinziehen oder + klicken" : "Keine Notiz ge\xF6ffnet",
+        cls: "remnote-pdf-no-pdf"
+      });
+      return;
+    }
+    for (let i = 0; i < this.pdfPaths.length; i++) {
+      const name = (_b = (_a = this.pdfPaths[i].split("/").pop()) == null ? void 0 : _a.replace(/\.pdf$/i, "")) != null ? _b : "";
+      const isActive = i === this.activeIdx;
+      const hasLeft = isActive && i > 0;
+      const hasRight = isActive && i < this.pdfPaths.length - 1;
+      const wrapper = this.tabBar.createDiv({
+        cls: "remnote-pdf-tab-wrapper" + (isActive ? " active" : "")
+      });
+      if (hasLeft) {
+        const lb = wrapper.createEl("button", {
+          cls: "remnote-pdf-sort-btn remnote-pdf-sort-left",
+          title: "Nach links verschieben"
+        });
+        lb.textContent = "\u25C4";
+        lb.onclick = (e) => {
+          e.stopPropagation();
+          this.movePdf(i, i - 1);
+        };
+      }
+      let radiusCls = "";
+      if (hasLeft && hasRight)
+        radiusCls = " remnote-pdf-tab-mid";
+      else if (hasLeft)
+        radiusCls = " remnote-pdf-tab-right";
+      else if (hasRight)
+        radiusCls = " remnote-pdf-tab-left";
+      const tabBtn = wrapper.createEl("button", {
+        cls: "remnote-pdf-tab" + (isActive ? " active" : "") + radiusCls,
+        title: this.pdfPaths[i]
+      });
+      tabBtn.setText(name);
+      tabBtn.onclick = () => {
+        this.activeIdx = i;
+        this.currentPage = 1;
+        this.refreshTabs();
+        this.renderPdf();
+      };
+      if (hasRight) {
+        const rb = wrapper.createEl("button", {
+          cls: "remnote-pdf-sort-btn remnote-pdf-sort-right",
+          title: "Nach rechts verschieben"
+        });
+        rb.textContent = "\u25BA";
+        rb.onclick = (e) => {
+          e.stopPropagation();
+          this.movePdf(i, i + 1);
+        };
+      }
+    }
+    requestAnimationFrame(() => {
+      var _a2;
+      const activeWrapper = (_a2 = this.tabBar) == null ? void 0 : _a2.querySelector(".remnote-pdf-tab-wrapper.active");
+      activeWrapper == null ? void 0 : activeWrapper.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+  }
+  /** Move PDF from fromIdx to toIdx, save, and refresh */
+  async movePdf(fromIdx, toIdx) {
+    if (toIdx < 0 || toIdx >= this.pdfPaths.length)
+      return;
+    const arr = [...this.pdfPaths];
+    const [item] = arr.splice(fromIdx, 1);
+    arr.splice(toIdx, 0, item);
+    this.pdfPaths = arr;
+    this.activeIdx = toIdx;
+    await this.saveNow();
+    this.refreshTabs();
+  }
+  // ── Render PDF using Obsidian native embed ────────────────────────────────
   async renderPdf() {
     var _a;
     if (!this.pdfContainer || !this.statusEl)
@@ -1755,32 +1911,43 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     if (this.pdfPaths.length === 0) {
       this.pdfContainer.style.display = "none";
       this.statusEl.style.display = "flex";
-      this.statusEl.innerHTML = this.notePath ? `<div class="remnote-pdf-status-icon">\u{1F4C4}</div>
-           <div class="remnote-pdf-status-text">Kein PDF verkn\xFCpft</div>
-           <div class="remnote-pdf-status-sub">PDF aus Windows Explorer hier reinziehen<br>oder "+ PDF" f\xFCr ein PDF aus dem Vault</div>` : `<div class="remnote-pdf-status-icon">\u{1F4DD}</div>
-           <div class="remnote-pdf-status-text">Keine Notiz ge\xF6ffnet</div>
-           <div class="remnote-pdf-status-sub">\xD6ffne eine Notiz um ihre PDFs anzuzeigen</div>`;
+      if (this.pdfNameEl)
+        this.pdfNameEl.textContent = "";
+      this.statusEl.innerHTML = this.notePath ? '<div class="remnote-pdf-status-icon">\u{1F4C4}</div><div class="remnote-pdf-status-text">Kein PDF verkn\xFCpft</div><div class="remnote-pdf-status-sub">PDF aus Windows Explorer hier reinziehen<br>oder \u201E+ PDF\u201C f\xFCr ein PDF aus dem Vault</div>' : '<div class="remnote-pdf-status-icon">\u{1F4DD}</div><div class="remnote-pdf-status-text">Keine Notiz ge\xF6ffnet</div><div class="remnote-pdf-status-sub">\xD6ffne eine Notiz um ihre PDFs anzuzeigen</div>';
       return;
     }
     this.pdfContainer.style.display = "block";
     this.statusEl.style.display = "none";
-    const pdfPath = this.pdfPaths[this.activeIdx];
-    const pdfFile = this.app.vault.getAbstractFileByPath(pdfPath);
-    if (!(pdfFile instanceof import_obsidian6.TFile)) {
-      new import_obsidian6.Notice(`PDF nicht im Vault gefunden: ${pdfPath}`);
+    const storedPath = this.pdfPaths[this.activeIdx];
+    const pdfFile = this.resolveFile(storedPath);
+    if (!pdfFile) {
+      if (this.renderRetry < 4) {
+        this.renderRetry++;
+        setTimeout(() => this.renderPdf(), 600 * this.renderRetry);
+        return;
+      }
+      this.renderRetry = 0;
+      new import_obsidian6.Notice("PDF nicht im Vault gefunden: " + storedPath, 5e3);
+      this.pdfContainer.style.display = "none";
+      this.statusEl.style.display = "flex";
+      this.statusEl.innerHTML = '<div class="remnote-pdf-status-icon">\u26A0\uFE0F</div><div class="remnote-pdf-status-text">PDF nicht gefunden</div><div class="remnote-pdf-status-sub">' + storedPath + "</div>";
       return;
     }
+    this.renderRetry = 0;
+    if (this.pdfNameEl)
+      this.pdfNameEl.textContent = pdfFile.name;
     if (this.pageInput)
       this.pageInput.value = String(this.currentPage);
-    const embedSyntax = `![[${pdfPath}#page=${this.currentPage}]]`;
+    const embedSyntax = "![[" + pdfFile.path + "#page=" + this.currentPage + "]]";
     await import_obsidian6.MarkdownRenderer.render(
       this.app,
       embedSyntax,
       this.pdfContainer,
-      (_a = this.notePath) != null ? _a : pdfPath,
+      (_a = this.notePath) != null ? _a : pdfFile.path,
       this.plugin
     );
     this.expandEmbedHeight();
+    this.scheduleSave();
   }
   /** Make the embedded PDF viewer fill the available panel height */
   expandEmbedHeight() {
@@ -1814,18 +1981,12 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     const navigated = this.tryNavigateInPlace(page);
     if (!navigated)
       this.renderPdf();
+    this.scheduleSave();
   }
-  /**
-   * Attempt to jump to a page inside the already-rendered Obsidian PDF embed
-   * without destroying and re-creating the whole embed (avoids flicker).
-   * Returns true if navigation succeeded.
-   */
   tryNavigateInPlace(page) {
     if (!this.pdfContainer)
       return false;
-    const iframe = this.pdfContainer.querySelector(
-      ".pdf-embed iframe"
-    );
+    const iframe = this.pdfContainer.querySelector(".pdf-embed iframe");
     if (!iframe)
       return false;
     try {
@@ -1833,13 +1994,13 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
       if (!src)
         return false;
       const base = src.split("#")[0];
-      iframe.src = `${base}#page=${page}`;
+      iframe.src = base + "#page=" + page;
       return true;
     } catch (e) {
       return false;
     }
   }
-  // ── Insert [[pdf#page=N|S.N]] into active note ────────────────────────────
+  // ── Insert [[pdf#page=N|*]] into active note ──────────────────────────────
   insertPageRef() {
     var _a;
     if (this.pdfPaths.length === 0) {
@@ -1847,16 +2008,16 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
       return;
     }
     const pdfName = (_a = this.pdfPaths[this.activeIdx].split("/").pop()) != null ? _a : "";
-    const ref = `[[${pdfName}#page=${this.currentPage}|*]]`;
+    const ref = "[[" + pdfName + "#page=" + this.currentPage + "|*]]";
     const view = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
     if (view == null ? void 0 : view.editor) {
       view.editor.replaceRange(ref, view.editor.getCursor());
-      new import_obsidian6.Notice(`\u2713 Referenz eingef\xFCgt: ${ref}`, 2e3);
+      new import_obsidian6.Notice("\u2713 Referenz eingef\xFCgt: " + ref, 2e3);
     } else {
-      navigator.clipboard.writeText(ref).then(() => new import_obsidian6.Notice(`Referenz kopiert: ${ref}`, 3e3));
+      navigator.clipboard.writeText(ref).then(() => new import_obsidian6.Notice("Referenz kopiert: " + ref, 3e3));
     }
   }
-  // ── Public: jump to a specific PDF + page (called from link click handler) ─
+  // ── Public: jump to a specific PDF + page ─────────────────────────────────
   async openPdfAtPage(pdfPath, page) {
     if (!this.pdfPaths.includes(pdfPath)) {
       await this.linkPdf(pdfPath);
@@ -1873,7 +2034,7 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     if (!navigated)
       await this.renderPdf();
   }
-  // ── Drag & Drop ───────────────────────────────────────────────────────────
+  // ── Drag & Drop (OS file → vault) ─────────────────────────────────────────
   attachDragDrop(target) {
     let depth = 0;
     target.addEventListener("dragenter", (e) => {
@@ -1928,31 +2089,32 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     }
     const fileName = file.name;
     const folder = (this.plugin.pluginData.settings.pdfAttachmentFolder || "Attachments/PDFs").replace(/\/$/, "");
-    const destPath = `${folder}/${fileName}`;
+    const destPath = folder + "/" + fileName;
     const vaultBase = ((_a = this.app.vault.adapter.basePath) != null ? _a : "").replace(/\\/g, "/");
     const electronPath = ((_b = file.path) != null ? _b : "").replace(/\\/g, "/");
     if (vaultBase && electronPath.startsWith(vaultBase)) {
       const rel = electronPath.slice(vaultBase.length).replace(/^\//, "");
       await this.linkPdf(rel);
-      new import_obsidian6.Notice(`"${fileName}" ist bereits im Vault \u2014 verkn\xFCpft`, 2e3);
+      new import_obsidian6.Notice('"' + fileName + '" ist bereits im Vault \u2014 verkn\xFCpft', 2e3);
       return;
     }
     if (await this.app.vault.adapter.exists(destPath)) {
       await this.linkPdf(destPath);
-      new import_obsidian6.Notice(`"${fileName}" existiert bereits im Vault \u2014 verkn\xFCpft`, 2e3);
+      new import_obsidian6.Notice('"' + fileName + '" existiert bereits im Vault \u2014 verkn\xFCpft', 2e3);
       return;
     }
     if (!await this.app.vault.adapter.exists(folder))
       await this.app.vault.createFolder(folder);
-    const notice = new import_obsidian6.Notice(`Importiere "${fileName}"\u2026`, 0);
+    const notice = new import_obsidian6.Notice('Importiere "' + fileName + '"\u2026', 0);
     try {
       await this.app.vault.adapter.writeBinary(destPath, await file.arrayBuffer());
       notice.hide();
+      this.renderRetry = 0;
       await this.linkPdf(destPath);
-      new import_obsidian6.Notice(`\u2713 "${fileName}" \u2192 ${destPath}`, 4e3);
+      new import_obsidian6.Notice('\u2713 "' + fileName + '" \u2192 ' + destPath, 4e3);
     } catch (err) {
       notice.hide();
-      new import_obsidian6.Notice(`Import fehlgeschlagen: ${(_c = err.message) != null ? _c : err}`, 5e3);
+      new import_obsidian6.Notice("Import fehlgeschlagen: " + ((_c = err.message) != null ? _c : err), 5e3);
     }
   }
   // ── Link a vault PDF to the current note ─────────────────────────────────
@@ -1968,41 +2130,11 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
       return;
     }
     this.pdfPaths.push(vaultPath);
-    const noteFile = this.app.vault.getAbstractFileByPath(this.notePath);
-    if (noteFile instanceof import_obsidian6.TFile)
-      await this.saveFrontmatterPdfs(noteFile, [...this.pdfPaths]);
+    await this.saveNow();
     this.activeIdx = this.pdfPaths.length - 1;
     this.currentPage = 1;
     this.refreshTabs();
     this.renderPdf();
-  }
-  // ── Tab bar ───────────────────────────────────────────────────────────────
-  refreshTabs() {
-    var _a, _b;
-    if (!this.tabBar)
-      return;
-    this.tabBar.empty();
-    if (this.pdfPaths.length === 0) {
-      this.tabBar.createEl("span", {
-        text: this.notePath ? "Kein PDF \u2014 PDF reinziehen oder + klicken" : "Keine Notiz ge\xF6ffnet",
-        cls: "remnote-pdf-no-pdf"
-      });
-      return;
-    }
-    for (let i = 0; i < this.pdfPaths.length; i++) {
-      const name = (_b = (_a = this.pdfPaths[i].split("/").pop()) == null ? void 0 : _a.replace(/\.pdf$/i, "")) != null ? _b : "";
-      const tab = this.tabBar.createEl("button", {
-        cls: "remnote-pdf-tab" + (i === this.activeIdx ? " active" : ""),
-        title: this.pdfPaths[i]
-      });
-      tab.setText(name);
-      tab.onclick = () => {
-        this.activeIdx = i;
-        this.currentPage = 1;
-        this.refreshTabs();
-        this.renderPdf();
-      };
-    }
   }
   // ── Manage linked PDFs ────────────────────────────────────────────────────
   addPdfFromVault() {
@@ -2022,16 +2154,12 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
       return;
     const removed = this.pdfPaths[this.activeIdx].split("/").pop();
     this.pdfPaths.splice(this.activeIdx, 1);
-    if (this.notePath) {
-      const noteFile = this.app.vault.getAbstractFileByPath(this.notePath);
-      if (noteFile instanceof import_obsidian6.TFile)
-        await this.saveFrontmatterPdfs(noteFile, [...this.pdfPaths]);
-    }
+    await this.saveNow();
     this.activeIdx = Math.max(0, this.activeIdx - 1);
     this.currentPage = 1;
     this.refreshTabs();
     this.renderPdf();
-    new import_obsidian6.Notice(`"${removed}" entfernt`, 2e3);
+    new import_obsidian6.Notice('"' + removed + '" entfernt', 2e3);
   }
   isVisible() {
     return this.leaf.view === this;
