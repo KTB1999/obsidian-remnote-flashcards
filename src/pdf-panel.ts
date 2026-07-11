@@ -1,6 +1,6 @@
 ﻿import {
   ItemView, WorkspaceLeaf, TFile, Notice,
-  Modal, App, MarkdownView, MarkdownRenderer
+  Modal, App, MarkdownView
 } from "obsidian";
 import type RemNoteFlashcardsPlugin from "./main";
 
@@ -123,6 +123,7 @@ export class PdfPanelView extends ItemView {
   private statusEl:     HTMLElement | null = null;
   private pdfContainer: HTMLElement | null = null;
   private dropOverlay:  HTMLElement | null = null;
+  private pdfIframe:    HTMLIFrameElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: RemNoteFlashcardsPlugin) {
     super(leaf);
@@ -423,6 +424,7 @@ export class PdfPanelView extends ItemView {
   private async renderPdf() {
     if (!this.pdfContainer || !this.statusEl) return;
     this.pdfContainer.empty();
+    this.pdfIframe = null;
 
     if (this.pdfPaths.length === 0) {
       this.pdfContainer.style.display = "none";
@@ -466,41 +468,19 @@ export class PdfPanelView extends ItemView {
     if (this.pdfNameEl) this.pdfNameEl.textContent = pdfFile.name;
     if (this.pageInput)  this.pageInput.value        = String(this.currentPage);
 
-    const embedSyntax = "![[" + pdfFile.path + "#page=" + this.currentPage + "]]";
-    await MarkdownRenderer.render(
-      this.app,
-      embedSyntax,
-      this.pdfContainer,
-      this.notePath ?? pdfFile.path,
-      this.plugin
+    // Use Chromium's native PDF viewer via vault resource URL.
+    // This avoids the PDF.js canvas blank-on-init issue that affects Obsidian's
+    // inline embed when the host container hasn't settled its dimensions yet.
+    const resourceUrl = (this.app.vault as any).getResourcePath(pdfFile) as string;
+
+    this.pdfIframe = document.createElement("iframe");
+    this.pdfIframe.src = resourceUrl + "#page=" + this.currentPage;
+    this.pdfIframe.setAttribute("style",
+      "position:absolute;inset:0;width:100%;height:100%;border:none;display:block;"
     );
+    this.pdfContainer!.appendChild(this.pdfIframe);
 
-    this.expandEmbedHeight();
     this.scheduleSave();
-  }
-
-  /** Make the embedded PDF viewer fill the available panel height */
-  private expandEmbedHeight() {
-    if (!this.pdfContainer) return;
-
-    const applyHeight = () => {
-      const embed = this.pdfContainer!.querySelector<HTMLElement>(".pdf-embed");
-      if (embed) {
-        embed.style.height    = "100%";
-        embed.style.maxHeight = "none";
-      }
-      const inner = this.pdfContainer!.querySelector<HTMLElement>(
-        ".pdf-embed iframe, .pdf-embed object, .pdf-embed embed"
-      );
-      if (inner) {
-        (inner as HTMLElement).style.height    = "100%";
-        (inner as HTMLElement).style.minHeight = "400px";
-      }
-    };
-
-    applyHeight();
-    setTimeout(applyHeight, 150);
-    setTimeout(applyHeight, 500);
   }
 
   // ── Navigation ────────────────────────────────────────────────────────────
@@ -509,25 +489,19 @@ export class PdfPanelView extends ItemView {
     this.currentPage = page;
     if (this.pageInput) this.pageInput.value = String(page);
 
-    const navigated = this.tryNavigateInPlace(page);
-    if (!navigated) this.renderPdf();
+    // Update iframe src directly — avoids full re-render
+    if (this.pdfIframe) {
+      try {
+        const base = this.pdfIframe.src.split("#")[0];
+        this.pdfIframe.src = base + "#page=" + page;
+      } catch {
+        this.renderPdf();
+      }
+    } else {
+      this.renderPdf();
+    }
 
     this.scheduleSave();
-  }
-
-  private tryNavigateInPlace(page: number): boolean {
-    if (!this.pdfContainer) return false;
-    const iframe = this.pdfContainer.querySelector<HTMLIFrameElement>(".pdf-embed iframe");
-    if (!iframe) return false;
-    try {
-      const src = iframe.src || "";
-      if (!src) return false;
-      const base = src.split("#")[0];
-      iframe.src = base + "#page=" + page;
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   // ── Insert [[pdf#page=N|*]] into active note ──────────────────────────────
@@ -559,8 +533,14 @@ export class PdfPanelView extends ItemView {
     this.currentPage = page;
     if (this.pageInput) this.pageInput.value = String(page);
 
-    const navigated = this.tryNavigateInPlace(page);
-    if (!navigated) await this.renderPdf();
+    if (this.pdfIframe) {
+      try {
+        const base = this.pdfIframe.src.split("#")[0];
+        this.pdfIframe.src = base + "#page=" + page;
+      } catch { await this.renderPdf(); }
+    } else {
+      await this.renderPdf();
+    }
   }
 
   // ── Drag & Drop (OS file → vault) ─────────────────────────────────────────

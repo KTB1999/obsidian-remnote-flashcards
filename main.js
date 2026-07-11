@@ -1613,6 +1613,7 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     this.statusEl = null;
     this.pdfContainer = null;
     this.dropOverlay = null;
+    this.pdfIframe = null;
     this.plugin = plugin;
   }
   getViewType() {
@@ -1904,10 +1905,10 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
   }
   // ── Render PDF using Obsidian native embed ────────────────────────────────
   async renderPdf() {
-    var _a;
     if (!this.pdfContainer || !this.statusEl)
       return;
     this.pdfContainer.empty();
+    this.pdfIframe = null;
     if (this.pdfPaths.length === 0) {
       this.pdfContainer.style.display = "none";
       this.statusEl.style.display = "flex";
@@ -1938,38 +1939,15 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
       this.pdfNameEl.textContent = pdfFile.name;
     if (this.pageInput)
       this.pageInput.value = String(this.currentPage);
-    const embedSyntax = "![[" + pdfFile.path + "#page=" + this.currentPage + "]]";
-    await import_obsidian6.MarkdownRenderer.render(
-      this.app,
-      embedSyntax,
-      this.pdfContainer,
-      (_a = this.notePath) != null ? _a : pdfFile.path,
-      this.plugin
+    const resourceUrl = this.app.vault.getResourcePath(pdfFile);
+    this.pdfIframe = document.createElement("iframe");
+    this.pdfIframe.src = resourceUrl + "#page=" + this.currentPage;
+    this.pdfIframe.setAttribute(
+      "style",
+      "position:absolute;inset:0;width:100%;height:100%;border:none;display:block;"
     );
-    this.expandEmbedHeight();
+    this.pdfContainer.appendChild(this.pdfIframe);
     this.scheduleSave();
-  }
-  /** Make the embedded PDF viewer fill the available panel height */
-  expandEmbedHeight() {
-    if (!this.pdfContainer)
-      return;
-    const applyHeight = () => {
-      const embed = this.pdfContainer.querySelector(".pdf-embed");
-      if (embed) {
-        embed.style.height = "100%";
-        embed.style.maxHeight = "none";
-      }
-      const inner = this.pdfContainer.querySelector(
-        ".pdf-embed iframe, .pdf-embed object, .pdf-embed embed"
-      );
-      if (inner) {
-        inner.style.height = "100%";
-        inner.style.minHeight = "400px";
-      }
-    };
-    applyHeight();
-    setTimeout(applyHeight, 150);
-    setTimeout(applyHeight, 500);
   }
   // ── Navigation ────────────────────────────────────────────────────────────
   gotoPage(page) {
@@ -1978,27 +1956,17 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     this.currentPage = page;
     if (this.pageInput)
       this.pageInput.value = String(page);
-    const navigated = this.tryNavigateInPlace(page);
-    if (!navigated)
+    if (this.pdfIframe) {
+      try {
+        const base = this.pdfIframe.src.split("#")[0];
+        this.pdfIframe.src = base + "#page=" + page;
+      } catch (e) {
+        this.renderPdf();
+      }
+    } else {
       this.renderPdf();
-    this.scheduleSave();
-  }
-  tryNavigateInPlace(page) {
-    if (!this.pdfContainer)
-      return false;
-    const iframe = this.pdfContainer.querySelector(".pdf-embed iframe");
-    if (!iframe)
-      return false;
-    try {
-      const src = iframe.src || "";
-      if (!src)
-        return false;
-      const base = src.split("#")[0];
-      iframe.src = base + "#page=" + page;
-      return true;
-    } catch (e) {
-      return false;
     }
+    this.scheduleSave();
   }
   // ── Insert [[pdf#page=N|*]] into active note ──────────────────────────────
   insertPageRef() {
@@ -2030,9 +1998,16 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     this.currentPage = page;
     if (this.pageInput)
       this.pageInput.value = String(page);
-    const navigated = this.tryNavigateInPlace(page);
-    if (!navigated)
+    if (this.pdfIframe) {
+      try {
+        const base = this.pdfIframe.src.split("#")[0];
+        this.pdfIframe.src = base + "#page=" + page;
+      } catch (e) {
+        await this.renderPdf();
+      }
+    } else {
       await this.renderPdf();
+    }
   }
   // ── Drag & Drop (OS file → vault) ─────────────────────────────────────────
   attachDragDrop(target) {

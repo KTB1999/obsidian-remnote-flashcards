@@ -1124,44 +1124,11 @@
   font-style: italic;
 }
 
-/* PDF container — Obsidian native embed renders here */
+/* PDF container — native iframe renders absolutely inside here */
 .remnote-pdf-container {
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   position: relative;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Override Obsidian's default PDF embed sizing so it fills the panel */
-.remnote-pdf-container .pdf-embed {
-  height: 100% !important;
-  max-height: none !important;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.remnote-pdf-container .pdf-embed .pdf-embed-link {
-  display: none; /* hide "Open in new tab" header link inside panel */
-}
-
-.remnote-pdf-container .pdf-embed iframe,
-.remnote-pdf-container .pdf-embed object,
-.remnote-pdf-container .pdf-embed embed {
-  flex: 1;
-  width: 100% !important;
-  height: 100% !important;
-  min-height: 500px;
-  border: none;
-}
-
-/* Fallback: if Obsidian wraps embed in a container div */
-.remnote-pdf-container > div {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  height: 100%;
 }
 
 /* Status (empty state) */
