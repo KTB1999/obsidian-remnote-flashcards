@@ -313,8 +313,16 @@ export class PdfPanelView extends ItemView {
     // Filename display — fills remaining nav space between page controls and link button
     this.pdfNameEl = navBar.createEl("span", { cls: "remnote-pdf-name-display", text: "" });
 
-    const linkBtn = navBar.createEl("button", { cls: "remnote-pdf-btn remnote-pdf-btn-link", title: "[[pdf#page=N|*]] in Notiz einfügen" });
-    linkBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Seite verknüpfen';
+    // "Zitat" button — wraps clipboard text as [[pdf#page=N|text]] (Alt+Q)
+    const quoteBtn = navBar.createEl("button", {
+      cls:   "remnote-pdf-btn remnote-pdf-btn-quote",
+      title: "Markierten PDF-Text als versteckten Seitenlink kopieren (Alt+Q)\n1. Text im PDF markieren → Ctrl+C\n2. Diesen Button klicken\n3. In Notiz einfügen → [[datei.pdf#Seite=N|Text]]",
+    });
+    quoteBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg> Zitat';
+    quoteBtn.onclick = () => this.copySelectionWithRef();
+
+    const linkBtn = navBar.createEl("button", { cls: "remnote-pdf-btn remnote-pdf-btn-link", title: "[[pdf#page=N|*]] an Cursor einfügen (leerer Anker)" });
+    linkBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Seite';
     linkBtn.onclick = () => this.insertPageRef();
 
     // Alt+Arrow shortcuts
@@ -323,6 +331,7 @@ export class PdfPanelView extends ItemView {
       if ((e.target as HTMLElement).closest("input,textarea")) return;
       if (e.altKey && e.key === "ArrowLeft")  { e.preventDefault(); this.gotoPage(this.currentPage - 1); }
       if (e.altKey && e.key === "ArrowRight") { e.preventDefault(); this.gotoPage(this.currentPage + 1); }
+      if (e.altKey && e.key === "q")          { e.preventDefault(); this.copySelectionWithRef(); }
     });
 
     // ── Main area ─────────────────────────────────────────────────────────
@@ -517,6 +526,40 @@ export class PdfPanelView extends ItemView {
     } else {
       navigator.clipboard.writeText(ref)
         .then(() => new Notice("Referenz kopiert: " + ref, 3000));
+    }
+  }
+
+  // ── Copy selected PDF text as [[pdf#page=N|text]] (Alt+Q) ────────────────
+  async copySelectionWithRef() {
+    if (this.pdfPaths.length === 0) { new Notice("Kein PDF aktiv."); return; }
+
+    let selectedText = "";
+    try {
+      selectedText = (await navigator.clipboard.readText()).trim();
+    } catch {
+      new Notice(
+        "Clipboard-Zugriff verweigert.\nMarkiere Text im PDF → Ctrl+C → dann diesen Button klicken.",
+        5000
+      );
+      return;
+    }
+
+    if (!selectedText) {
+      new Notice(
+        "Zwischenablage ist leer.\nMarkiere zuerst Text im PDF und drücke Ctrl+C.",
+        4000
+      );
+      return;
+    }
+
+    const pdfName = this.pdfPaths[this.activeIdx].split("/").pop() ?? "";
+    const ref     = "[[" + pdfName + "#page=" + this.currentPage + "|" + selectedText + "]]";
+
+    try {
+      await navigator.clipboard.writeText(ref);
+      new Notice("✓ Zitat kopiert (Seite " + this.currentPage + ") — jetzt in Notiz einfügen", 3000);
+    } catch {
+      new Notice("Clipboard-Schreibzugriff verweigert.", 3000);
     }
   }
 

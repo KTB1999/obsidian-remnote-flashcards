@@ -1797,8 +1797,14 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     nextBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>';
     nextBtn.onclick = () => this.gotoPage(this.currentPage + 1);
     this.pdfNameEl = navBar.createEl("span", { cls: "remnote-pdf-name-display", text: "" });
-    const linkBtn = navBar.createEl("button", { cls: "remnote-pdf-btn remnote-pdf-btn-link", title: "[[pdf#page=N|*]] in Notiz einf\xFCgen" });
-    linkBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Seite verkn\xFCpfen';
+    const quoteBtn = navBar.createEl("button", {
+      cls: "remnote-pdf-btn remnote-pdf-btn-quote",
+      title: "Markierten PDF-Text als versteckten Seitenlink kopieren (Alt+Q)\n1. Text im PDF markieren \u2192 Ctrl+C\n2. Diesen Button klicken\n3. In Notiz einf\xFCgen \u2192 [[datei.pdf#Seite=N|Text]]"
+    });
+    quoteBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg> Zitat';
+    quoteBtn.onclick = () => this.copySelectionWithRef();
+    const linkBtn = navBar.createEl("button", { cls: "remnote-pdf-btn remnote-pdf-btn-link", title: "[[pdf#page=N|*]] an Cursor einf\xFCgen (leerer Anker)" });
+    linkBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Seite';
     linkBtn.onclick = () => this.insertPageRef();
     this.registerDomEvent(document, "keydown", (e) => {
       if (!this.isVisible())
@@ -1812,6 +1818,10 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
       if (e.altKey && e.key === "ArrowRight") {
         e.preventDefault();
         this.gotoPage(this.currentPage + 1);
+      }
+      if (e.altKey && e.key === "q") {
+        e.preventDefault();
+        this.copySelectionWithRef();
       }
     });
     const mainArea = contentEl.createDiv("remnote-pdf-main");
@@ -1983,6 +1993,39 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
       new import_obsidian6.Notice("\u2713 Referenz eingef\xFCgt: " + ref, 2e3);
     } else {
       navigator.clipboard.writeText(ref).then(() => new import_obsidian6.Notice("Referenz kopiert: " + ref, 3e3));
+    }
+  }
+  // ── Copy selected PDF text as [[pdf#page=N|text]] (Alt+Q) ────────────────
+  async copySelectionWithRef() {
+    var _a;
+    if (this.pdfPaths.length === 0) {
+      new import_obsidian6.Notice("Kein PDF aktiv.");
+      return;
+    }
+    let selectedText = "";
+    try {
+      selectedText = (await navigator.clipboard.readText()).trim();
+    } catch (e) {
+      new import_obsidian6.Notice(
+        "Clipboard-Zugriff verweigert.\nMarkiere Text im PDF \u2192 Ctrl+C \u2192 dann diesen Button klicken.",
+        5e3
+      );
+      return;
+    }
+    if (!selectedText) {
+      new import_obsidian6.Notice(
+        "Zwischenablage ist leer.\nMarkiere zuerst Text im PDF und dr\xFCcke Ctrl+C.",
+        4e3
+      );
+      return;
+    }
+    const pdfName = (_a = this.pdfPaths[this.activeIdx].split("/").pop()) != null ? _a : "";
+    const ref = "[[" + pdfName + "#page=" + this.currentPage + "|" + selectedText + "]]";
+    try {
+      await navigator.clipboard.writeText(ref);
+      new import_obsidian6.Notice("\u2713 Zitat kopiert (Seite " + this.currentPage + ") \u2014 jetzt in Notiz einf\xFCgen", 3e3);
+    } catch (e) {
+      new import_obsidian6.Notice("Clipboard-Schreibzugriff verweigert.", 3e3);
     }
   }
   // ── Public: jump to a specific PDF + page ─────────────────────────────────
