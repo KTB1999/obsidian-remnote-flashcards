@@ -241,15 +241,134 @@ export class ReviewModal extends Modal {
     const revealBtn = container.createEl("button", { text: "Unterfragen anzeigen  [Space]", cls: "remnote-btn remnote-btn-reveal" });
     revealBtn.onclick = async () => {
       revealBtn.style.display = "none";
+      if (this.keyHandler) { document.removeEventListener("keydown", this.keyHandler); this.keyHandler = null; }
       const mlContainer = container.createDiv("remnote-multilayer-container");
-      await this.renderMultilayerBack(card.back, mlContainer, card.filePath);
-      this.showAnswerActions(container, card);
+      await this.renderMultilayerItems(card.back, mlContainer, card);
     };
     this.keyHandler = (e: KeyboardEvent) => {
       if (e.key === " "         && !this.isRatingVisible(container)) { e.preventDefault(); revealBtn.click(); }
       if (e.key === "Backspace" && !this.isRatingVisible(container)) { e.preventDefault(); this.goBack(); }
     };
     document.addEventListener("keydown", this.keyHandler);
+  }
+
+  private async renderMultilayerItems(back: string, container: HTMLElement, card: Flashcard) {
+    const ratingOrder: Rating[] = ["again", "hard", "good", "easy"];
+    const ratingValue = (r: Rating): number => ratingOrder.indexOf(r);
+
+    const lines = back.split("\n");
+    const parsedItems: Array<{ qText: string; aText: string; isRateable: boolean }> = [];
+
+    let i = 0;
+    while (i < lines.length) {
+      const line    = lines[i];
+      const trimmed = line.trim();
+      if (!trimmed) { i++; continue; }
+      const content = trimmed.replace(/^[-*+]\s+/, "");
+      const indent  = line.match(/^(\s*)/)?.[1]?.length ?? 0;
+
+      const dropIdx = findSeparator(content, ":::");
+      if (dropIdx !== -1) {
+        const qText = content.slice(0, dropIdx).trim();
+        const aText = content.slice(dropIdx + 3).trim();
+        const subLines: string[] = [];
+        let j = i + 1;
+        while (j < lines.length) {
+          const nextIndent = lines[j].match(/^(\s*)/)?.[1]?.length ?? 0;
+          if (!lines[j].trim() || nextIndent <= indent) break;
+          subLines.push(lines[j]); j++;
+        }
+        const fullAnswer = [aText, ...subLines].filter(Boolean).join("\n");
+        parsedItems.push({ qText, aText: fullAnswer, isRateable: true });
+        i = j; continue;
+      }
+
+      const basicIdx = findSeparator(content, "::");
+      if (basicIdx !== -1) {
+        parsedItems.push({
+          qText: content.slice(0, basicIdx).trim(),
+          aText: content.slice(basicIdx + 2).trim(),
+          isRateable: true,
+        });
+        i++; continue;
+      }
+
+      parsedItems.push({ qText: content, aText: "", isRateable: false });
+      i++;
+    }
+
+    const rateableItems = parsedItems.filter(it => it.isRateable);
+    if (rateableItems.length === 0) {
+      await this.renderMultilayerBack(back, container, card.filePath);
+      this.showAnswerActions(container, card);
+      return;
+    }
+
+    const ratings = new Map<number, Rating>();
+
+    for (let idx = 0; idx < parsedItems.length; idx++) {
+      const item = parsedItems[idx];
+
+      if (!item.isRateable) {
+        const plain = container.createDiv("remnote-ml-plain");
+        await MarkdownRenderer.render(this.app, item.qText, plain, card.filePath, this.plugin);
+        continue;
+      }
+
+      const rateableIdx = rateableItems.indexOf(item);
+      const row = container.createDiv("remnote-ml-row remnote-ml-progressive");
+
+      const qEl = row.createDiv("remnote-ml-question remnote-ml-clickable");
+      await MarkdownRenderer.render(this.app, item.qText, qEl, card.filePath, this.plugin);
+      qEl.createSpan({ text: " ▶", cls: "remnote-ml-expand-hint" });
+
+      const expandArea = row.createDiv("remnote-ml-expand-area");
+      expandArea.style.display = "none";
+
+      let expanded = false;
+      qEl.onclick = async () => {
+        if (expanded) return;
+        expanded = true;
+        qEl.classList.remove("remnote-ml-clickable");
+        qEl.querySelector<HTMLElement>(".remnote-ml-expand-hint")?.remove();
+        expandArea.style.display = "block";
+
+        const aEl = expandArea.createDiv("remnote-ml-answer");
+        await MarkdownRenderer.render(this.app, item.aText, aEl, card.filePath, this.plugin);
+
+        const itemRatingWrap = expandArea.createDiv("remnote-ml-item-rating");
+        const btnRow = itemRatingWrap.createDiv("remnote-ml-item-btn-row");
+
+        const ratingDefs: { rating: Rating; label: string }[] = [
+          { rating: "again", label: "Wieder" },
+          { rating: "hard",  label: "Schwer" },
+          { rating: "good",  label: "Gut" },
+          { rating: "easy",  label: "Einfach" },
+        ];
+
+        for (const { rating, label } of ratingDefs) {
+          const btn = btnRow.createEl("button", {
+            cls: `remnote-btn remnote-ml-item-btn remnote-rating-${rating}`,
+            text: label,
+          });
+          btn.onclick = () => {
+            btnRow.querySelectorAll<HTMLButtonElement>("button").forEach(b => {
+              b.disabled = true;
+              b.classList.remove("remnote-ml-item-btn-selected");
+            });
+            btn.classList.add("remnote-ml-item-btn-selected");
+            ratings.set(rateableIdx, rating);
+
+            if (ratings.size >= rateableItems.length) {
+              const worst = Array.from(ratings.values()).reduce((w, r) =>
+                ratingValue(r) < ratingValue(w) ? r : w
+              );
+              setTimeout(() => this.submitRating(worst), 350);
+            }
+          };
+        }
+      };
+    }
   }
 
   private async renderMultilayerBack(back: string, container: HTMLElement, filePath: string) {

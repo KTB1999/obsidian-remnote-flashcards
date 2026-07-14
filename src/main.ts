@@ -134,7 +134,7 @@ export default class RemNoteFlashcardsPlugin extends Plugin {
     // Re-scan on file changes
     this.registerEvent(
       this.app.vault.on("modify", async (file) => {
-        if (file instanceof TFile && file.extension === "md") {
+        if (file instanceof TFile && file.extension === "md" && this.inScanScope(file.path)) {
           await this.scanFile(file);
           this.updateBadge();
         }
@@ -143,7 +143,7 @@ export default class RemNoteFlashcardsPlugin extends Plugin {
 
     this.registerEvent(
       this.app.vault.on("create", async (file) => {
-        if (file instanceof TFile && file.extension === "md") {
+        if (file instanceof TFile && file.extension === "md" && this.inScanScope(file.path)) {
           await this.scanFile(file);
           this.updateBadge();
         }
@@ -195,12 +195,24 @@ export default class RemNoteFlashcardsPlugin extends Plugin {
   }
 
   // ── Vault scanning ─────────────────────────────────────────
+  private inScanScope(filePath: string): boolean {
+    const folders = this.pluginData.settings.scanFolders;
+    if (folders.length === 0) return true;
+    return folders.some((f) => {
+      const prefix = f.endsWith("/") ? f : f + "/";
+      return filePath.startsWith(prefix);
+    });
+  }
+
   async scanVault() {
-    this.allCards = [];
-    const files = this.app.vault.getMarkdownFiles();
-    for (const file of files) {
-      await this.scanFile(file, false);
-    }
+    const files = this.app.vault.getMarkdownFiles().filter((f) => this.inScanScope(f.path));
+    const results = await Promise.all(
+      files.map(async (file) => {
+        const content = await this.app.vault.read(file);
+        return parseFlashcards(content, file.path);
+      })
+    );
+    this.allCards = results.flat();
   }
 
   private async scanFile(file: TFile, merge = true) {
@@ -215,7 +227,7 @@ export default class RemNoteFlashcardsPlugin extends Plugin {
   }
 
   // ── Badge ──────────────────────────────────────────────────
-  private updateBadge() {
+  updateBadge() {
     if (!this.ribbonBadgeEl) return;
     const due = getTotalDueCount(this.allCards, this.pluginData);
     if (due > 0) {
@@ -261,7 +273,6 @@ export default class RemNoteFlashcardsPlugin extends Plugin {
 
   // ── Session actions ────────────────────────────────────────
   async openSessionPicker() {
-    await this.scanVault();
     new SessionPickerModal(this.app, this, this.allCards).open();
   }
 
@@ -281,7 +292,6 @@ export default class RemNoteFlashcardsPlugin extends Plugin {
   }
 
   async showStats() {
-    await this.scanVault();
     const stats = getStats(this.allCards, this.pluginData);
     const groups = this.pluginData.settings.examGroups;
 
@@ -308,7 +318,6 @@ export default class RemNoteFlashcardsPlugin extends Plugin {
   }
 
   async browseCards() {
-    await this.scanVault();
     new BrowseModal(this.app, this, this.allCards, this.pluginData).open();
   }
 

@@ -45,7 +45,8 @@ var DEFAULT_SETTINGS = {
   newCardsPerDay: 20,
   cardSyntaxBasic: "::",
   cardSyntaxDropdown: ":::",
-  pdfAttachmentFolder: "Attachments/PDFs"
+  pdfAttachmentFolder: "Attachments/PDFs",
+  scanFolders: []
 };
 function cardBelongsToGroup(card, group) {
   for (const p of group.paths) {
@@ -69,11 +70,6 @@ function cardId(filePath, front, line) {
     h = Math.imul(h, 16777619) >>> 0;
   }
   return h.toString(36).padStart(7, "0");
-}
-function isContinuationLine(line) {
-  if (line.trim() === "")
-    return false;
-  return /^[\t ]/.test(line) || /^\s*[-*+]\s/.test(line) || /^\s*\d+\.\s/.test(line);
 }
 function isMultilayer(back) {
   return back.split("\n").some((l) => {
@@ -107,9 +103,8 @@ function parseFlashcards(content, filePath) {
     const dropIdx = findSeparator(line, ":::");
     if (dropIdx !== -1) {
       const front = cleanFront(line.slice(0, dropIdx));
-      const firstBack = line.slice(dropIdx + 3).trim();
       if (front) {
-        const { back, consumed } = collectBack(firstBack, lines, i + 1);
+        const { back, consumed } = collectUntilBlank(lines, i + 1);
         const type = isMultilayer(back) ? "multilayer" : "dropdown";
         cards.push({ id: cardId(filePath, front, i), filePath, front, back, type, line: i });
         i += consumed;
@@ -120,11 +115,9 @@ function parseFlashcards(content, filePath) {
     const basicIdx = findSeparator(line, "::");
     if (basicIdx !== -1) {
       const front = cleanFront(line.slice(0, basicIdx));
-      const firstBack = line.slice(basicIdx + 2).trim();
+      const back = line.slice(basicIdx + 2).trim();
       if (front) {
-        const { back, consumed } = collectBack(firstBack, lines, i + 1);
         cards.push({ id: cardId(filePath, front, i), filePath, front, back, type: "basic", line: i });
-        i += consumed;
       }
       i++;
       continue;
@@ -133,12 +126,10 @@ function parseFlashcards(content, filePath) {
   }
   return cards;
 }
-function collectBack(inlinePart, lines, nextLine) {
+function collectUntilBlank(lines, nextLine) {
   const parts = [];
-  if (inlinePart)
-    parts.push(inlinePart);
   let j = nextLine;
-  while (j < lines.length && isContinuationLine(lines[j])) {
+  while (j < lines.length && lines[j].trim() !== "") {
     parts.push(lines[j]);
     j++;
   }
@@ -578,9 +569,12 @@ var ReviewModal = class extends import_obsidian.Modal {
     const revealBtn = container.createEl("button", { text: "Unterfragen anzeigen  [Space]", cls: "remnote-btn remnote-btn-reveal" });
     revealBtn.onclick = async () => {
       revealBtn.style.display = "none";
+      if (this.keyHandler) {
+        document.removeEventListener("keydown", this.keyHandler);
+        this.keyHandler = null;
+      }
       const mlContainer = container.createDiv("remnote-multilayer-container");
-      await this.renderMultilayerBack(card.back, mlContainer, card.filePath);
-      this.showAnswerActions(container, card);
+      await this.renderMultilayerItems(card.back, mlContainer, card);
     };
     this.keyHandler = (e) => {
       if (e.key === " " && !this.isRatingVisible(container)) {
@@ -593,6 +587,116 @@ var ReviewModal = class extends import_obsidian.Modal {
       }
     };
     document.addEventListener("keydown", this.keyHandler);
+  }
+  async renderMultilayerItems(back, container, card) {
+    var _a, _b, _c, _d, _e, _f;
+    const ratingOrder = ["again", "hard", "good", "easy"];
+    const ratingValue = (r) => ratingOrder.indexOf(r);
+    const lines = back.split("\n");
+    const parsedItems = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      if (!trimmed) {
+        i++;
+        continue;
+      }
+      const content = trimmed.replace(/^[-*+]\s+/, "");
+      const indent = (_c = (_b = (_a = line.match(/^(\s*)/)) == null ? void 0 : _a[1]) == null ? void 0 : _b.length) != null ? _c : 0;
+      const dropIdx = findSeparator(content, ":::");
+      if (dropIdx !== -1) {
+        const qText = content.slice(0, dropIdx).trim();
+        const aText = content.slice(dropIdx + 3).trim();
+        const subLines = [];
+        let j = i + 1;
+        while (j < lines.length) {
+          const nextIndent = (_f = (_e = (_d = lines[j].match(/^(\s*)/)) == null ? void 0 : _d[1]) == null ? void 0 : _e.length) != null ? _f : 0;
+          if (!lines[j].trim() || nextIndent <= indent)
+            break;
+          subLines.push(lines[j]);
+          j++;
+        }
+        const fullAnswer = [aText, ...subLines].filter(Boolean).join("\n");
+        parsedItems.push({ qText, aText: fullAnswer, isRateable: true });
+        i = j;
+        continue;
+      }
+      const basicIdx = findSeparator(content, "::");
+      if (basicIdx !== -1) {
+        parsedItems.push({
+          qText: content.slice(0, basicIdx).trim(),
+          aText: content.slice(basicIdx + 2).trim(),
+          isRateable: true
+        });
+        i++;
+        continue;
+      }
+      parsedItems.push({ qText: content, aText: "", isRateable: false });
+      i++;
+    }
+    const rateableItems = parsedItems.filter((it) => it.isRateable);
+    if (rateableItems.length === 0) {
+      await this.renderMultilayerBack(back, container, card.filePath);
+      this.showAnswerActions(container, card);
+      return;
+    }
+    const ratings = /* @__PURE__ */ new Map();
+    for (let idx = 0; idx < parsedItems.length; idx++) {
+      const item = parsedItems[idx];
+      if (!item.isRateable) {
+        const plain = container.createDiv("remnote-ml-plain");
+        await import_obsidian.MarkdownRenderer.render(this.app, item.qText, plain, card.filePath, this.plugin);
+        continue;
+      }
+      const rateableIdx = rateableItems.indexOf(item);
+      const row = container.createDiv("remnote-ml-row remnote-ml-progressive");
+      const qEl = row.createDiv("remnote-ml-question remnote-ml-clickable");
+      await import_obsidian.MarkdownRenderer.render(this.app, item.qText, qEl, card.filePath, this.plugin);
+      qEl.createSpan({ text: " \u25B6", cls: "remnote-ml-expand-hint" });
+      const expandArea = row.createDiv("remnote-ml-expand-area");
+      expandArea.style.display = "none";
+      let expanded = false;
+      qEl.onclick = async () => {
+        var _a2;
+        if (expanded)
+          return;
+        expanded = true;
+        qEl.classList.remove("remnote-ml-clickable");
+        (_a2 = qEl.querySelector(".remnote-ml-expand-hint")) == null ? void 0 : _a2.remove();
+        expandArea.style.display = "block";
+        const aEl = expandArea.createDiv("remnote-ml-answer");
+        await import_obsidian.MarkdownRenderer.render(this.app, item.aText, aEl, card.filePath, this.plugin);
+        const itemRatingWrap = expandArea.createDiv("remnote-ml-item-rating");
+        const btnRow = itemRatingWrap.createDiv("remnote-ml-item-btn-row");
+        const ratingDefs = [
+          { rating: "again", label: "Wieder" },
+          { rating: "hard", label: "Schwer" },
+          { rating: "good", label: "Gut" },
+          { rating: "easy", label: "Einfach" }
+        ];
+        for (const { rating, label } of ratingDefs) {
+          const btn = btnRow.createEl("button", {
+            cls: `remnote-btn remnote-ml-item-btn remnote-rating-${rating}`,
+            text: label
+          });
+          btn.onclick = () => {
+            btnRow.querySelectorAll("button").forEach((b) => {
+              b.disabled = true;
+              b.classList.remove("remnote-ml-item-btn-selected");
+            });
+            btn.classList.add("remnote-ml-item-btn-selected");
+            ratings.set(rateableIdx, rating);
+            if (ratings.size >= rateableItems.length) {
+              const worst = Array.from(ratings.values()).reduce(
+                (w, r) => ratingValue(r) < ratingValue(w) ? r : w
+              );
+              setTimeout(() => this.submitRating(worst), 350);
+            }
+          };
+        }
+      };
+    }
   }
   async renderMultilayerBack(back, container, filePath) {
     var _a, _b, _c, _d, _e, _f;
@@ -1351,6 +1455,21 @@ var RemNoteSettingsTab = class extends import_obsidian5.PluginSettingTab {
         await this.plugin.savePluginData();
       })
     );
+    containerEl.createEl("h3", { text: "Scan-Ordner" });
+    new import_obsidian5.Setting(containerEl).setName("Ordner f\xFCr Karteikarten").setDesc(
+      "Nur diese Ordner werden nach :: und ::: Karten abgesucht. Ein Ordner pro Zeile. Leer lassen = ganzer Vault.\nBeispiel: Sources"
+    ).addTextArea((ta) => {
+      ta.setPlaceholder("Sources\nSources/VL Notizen");
+      ta.setValue(this.plugin.pluginData.settings.scanFolders.join("\n"));
+      ta.inputEl.rows = 4;
+      ta.inputEl.style.width = "100%";
+      ta.onChange(async (value) => {
+        this.plugin.pluginData.settings.scanFolders = value.split("\n").map((s) => s.trim()).filter(Boolean);
+        await this.plugin.savePluginData();
+        await this.plugin.scanVault();
+        this.plugin.updateBadge();
+      });
+    });
     containerEl.createEl("h3", { text: "PDF Panel" });
     new import_obsidian5.Setting(containerEl).setName("Zielordner f\xFCr importierte PDFs").setDesc(
       "PDFs die per Drag & Drop importiert werden, landen hier im Vault.\nFalls dein Vault synchronisiert wird (OneDrive, iCloud, Obsidian Sync), landen importierte PDFs automatisch auf allen Ger\xE4ten."
@@ -2281,7 +2400,7 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian7.Plugin {
     });
     this.registerEvent(
       this.app.vault.on("modify", async (file) => {
-        if (file instanceof import_obsidian7.TFile && file.extension === "md") {
+        if (file instanceof import_obsidian7.TFile && file.extension === "md" && this.inScanScope(file.path)) {
           await this.scanFile(file);
           this.updateBadge();
         }
@@ -2289,7 +2408,7 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian7.Plugin {
     );
     this.registerEvent(
       this.app.vault.on("create", async (file) => {
-        if (file instanceof import_obsidian7.TFile && file.extension === "md") {
+        if (file instanceof import_obsidian7.TFile && file.extension === "md" && this.inScanScope(file.path)) {
           await this.scanFile(file);
           this.updateBadge();
         }
@@ -2336,12 +2455,24 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian7.Plugin {
     await this.saveData(this.pluginData);
   }
   // ── Vault scanning ─────────────────────────────────────────
+  inScanScope(filePath) {
+    const folders = this.pluginData.settings.scanFolders;
+    if (folders.length === 0)
+      return true;
+    return folders.some((f) => {
+      const prefix = f.endsWith("/") ? f : f + "/";
+      return filePath.startsWith(prefix);
+    });
+  }
   async scanVault() {
-    this.allCards = [];
-    const files = this.app.vault.getMarkdownFiles();
-    for (const file of files) {
-      await this.scanFile(file, false);
-    }
+    const files = this.app.vault.getMarkdownFiles().filter((f) => this.inScanScope(f.path));
+    const results = await Promise.all(
+      files.map(async (file) => {
+        const content = await this.app.vault.read(file);
+        return parseFlashcards(content, file.path);
+      })
+    );
+    this.allCards = results.flat();
   }
   async scanFile(file, merge = true) {
     const content = await this.app.vault.read(file);
@@ -2397,7 +2528,6 @@ Klicke auf das Karten-Icon in der Sidebar.`,
   }
   // ── Session actions ────────────────────────────────────────
   async openSessionPicker() {
-    await this.scanVault();
     new SessionPickerModal(this.app, this, this.allCards).open();
   }
   async reviewCurrentNote() {
@@ -2415,7 +2545,6 @@ Klicke auf das Karten-Icon in der Sidebar.`,
     new ReviewModal(this.app, this, cards, this.pluginData).open();
   }
   async showStats() {
-    await this.scanVault();
     const stats = getStats(this.allCards, this.pluginData);
     const groups = this.pluginData.settings.examGroups;
     let groupLines = "";
@@ -2442,7 +2571,6 @@ Nach Pr\xFCfung:${groupLines}` : ""),
     );
   }
   async browseCards() {
-    await this.scanVault();
     new BrowseModal(this.app, this, this.allCards, this.pluginData).open();
   }
   // ── PDF Panel ──────────────────────────────────────────────

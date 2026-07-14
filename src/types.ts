@@ -47,6 +47,7 @@ export interface PluginSettings {
   cardSyntaxBasic: string;
   cardSyntaxDropdown: string;
   pdfAttachmentFolder: string; // vault-relative folder for imported PDFs
+  scanFolders: string[];       // restrict card scanning to these folders (empty = whole vault)
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -60,6 +61,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   cardSyntaxBasic: "::",
   cardSyntaxDropdown: ":::",
   pdfAttachmentFolder: "Attachments/PDFs",
+  scanFolders: [],
 };
 
 export interface SessionState {

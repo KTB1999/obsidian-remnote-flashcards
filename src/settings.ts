@@ -189,6 +189,32 @@ export class RemNoteSettingsTab extends PluginSettingTab {
           })
       );
 
+    // ===== SCAN-ORDNER =====
+    containerEl.createEl("h3", { text: "Scan-Ordner" });
+
+    new Setting(containerEl)
+      .setName("Ordner für Karteikarten")
+      .setDesc(
+        "Nur diese Ordner werden nach :: und ::: Karten abgesucht. " +
+        "Ein Ordner pro Zeile. Leer lassen = ganzer Vault.\n" +
+        "Beispiel: Sources"
+      )
+      .addTextArea((ta) => {
+        ta.setPlaceholder("Sources\nSources/VL Notizen");
+        ta.setValue(this.plugin.pluginData.settings.scanFolders.join("\n"));
+        ta.inputEl.rows = 4;
+        ta.inputEl.style.width = "100%";
+        ta.onChange(async (value) => {
+          this.plugin.pluginData.settings.scanFolders = value
+            .split("\n")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          await this.plugin.savePluginData();
+          await this.plugin.scanVault();
+          this.plugin.updateBadge();
+        });
+      });
+
     // ===== PDF PANEL =====
     containerEl.createEl("h3", { text: "PDF Panel" });
 

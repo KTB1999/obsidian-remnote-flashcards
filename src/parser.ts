@@ -11,15 +11,6 @@ function cardId(filePath: string, front: string, line: number): string {
   return h.toString(36).padStart(7, "0");
 }
 
-/**
- * A continuation line belongs to the card's back content.
- * Must be indented OR start with a list marker. Empty line terminates.
- */
-function isContinuationLine(line: string): boolean {
-  if (line.trim() === "") return false;
-  return /^[\t ]/.test(line) || /^\s*[-*+]\s/.test(line) || /^\s*\d+\.\s/.test(line);
-}
-
 /** Returns true when the back content contains sub-bullets with :: or ::: */
 function isMultilayer(back: string): boolean {
   return back.split("\n").some((l) => {
@@ -56,10 +47,8 @@ export function parseFlashcards(content: string, filePath: string): Flashcard[] 
     const dropIdx = findSeparator(line, ":::");
     if (dropIdx !== -1) {
       const front = cleanFront(line.slice(0, dropIdx));
-      const firstBack = line.slice(dropIdx + 3).trim();
       if (front) {
-        const { back, consumed } = collectBack(firstBack, lines, i + 1);
-        // If sub-bullets themselves contain :: → multilayer card
+        const { back, consumed } = collectUntilBlank(lines, i + 1);
         const type: CardType = isMultilayer(back) ? "multilayer" : "dropdown";
         cards.push({ id: cardId(filePath, front, i), filePath, front, back, type, line: i });
         i += consumed;
@@ -72,11 +61,9 @@ export function parseFlashcards(content: string, filePath: string): Flashcard[] 
     const basicIdx = findSeparator(line, "::");
     if (basicIdx !== -1) {
       const front = cleanFront(line.slice(0, basicIdx));
-      const firstBack = line.slice(basicIdx + 2).trim();
+      const back  = line.slice(basicIdx + 2).trim();
       if (front) {
-        const { back, consumed } = collectBack(firstBack, lines, i + 1);
         cards.push({ id: cardId(filePath, front, i), filePath, front, back, type: "basic", line: i });
-        i += consumed;
       }
       i++;
       continue;
@@ -88,16 +75,14 @@ export function parseFlashcards(content: string, filePath: string): Flashcard[] 
   return cards;
 }
 
-function collectBack(inlinePart: string, lines: string[], nextLine: number): { back: string; consumed: number } {
+/** Collect lines until an empty line — used by ::: cards. */
+function collectUntilBlank(lines: string[], nextLine: number): { back: string; consumed: number } {
   const parts: string[] = [];
-  if (inlinePart) parts.push(inlinePart);
-
   let j = nextLine;
-  while (j < lines.length && isContinuationLine(lines[j])) {
-    parts.push(lines[j]); // keep original indentation for multilayer depth detection
+  while (j < lines.length && lines[j].trim() !== "") {
+    parts.push(lines[j]);
     j++;
   }
-
   return { back: parts.join("\n"), consumed: j - nextLine };
 }
 
