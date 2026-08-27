@@ -346,7 +346,7 @@ export class PdfPanelView extends ItemView {
       '<div class="remnote-pdf-drop-title">PDF hier ablegen</div>' +
       '<div class="remnote-pdf-drop-sub">Wird in Vault importiert und verknüpft</div>';
 
-    this.attachDragDrop(mainArea);
+    if (!Platform.isMobile) this.attachDragDrop(mainArea);
     this.refreshTabs();
     this.renderPdf();
   }
@@ -440,11 +440,13 @@ export class PdfPanelView extends ItemView {
       this.statusEl.style.display     = "flex";
       if (this.pdfNameEl) this.pdfNameEl.textContent = "";
       this.statusEl.innerHTML = this.notePath
-        ? '<div class="remnote-pdf-status-icon">📄</div>' +
-          '<div class="remnote-pdf-status-text">Kein PDF verknüpft</div>' +
-          '<div class="remnote-pdf-status-sub">PDF aus Windows Explorer hier reinziehen<br>oder „+ PDF“ für ein PDF aus dem Vault</div>'
-        : '<div class="remnote-pdf-status-icon">📝</div>' +
-          '<div class="remnote-pdf-status-text">Keine Notiz geöffnet</div>' +
+        ? '<div class=”remnote-pdf-status-icon”>📄</div>' +
+          '<div class=”remnote-pdf-status-text”>Kein PDF verknüpft</div>' +
+          (Platform.isMobile
+            ? '<div class=”remnote-pdf-status-sub”>„+ PDF” antippen um ein PDF aus dem Vault hinzuzufügen</div>'
+            : '<div class=”remnote-pdf-status-sub”>PDF aus Windows Explorer hier reinziehen<br>oder „+ PDF” für ein PDF aus dem Vault</div>')
+        : '<div class=”remnote-pdf-status-icon”>📝</div>' +
+          '<div class=”remnote-pdf-status-text”>Keine Notiz geöffnet</div>' +
           '<div class="remnote-pdf-status-sub">Öffne eine Notiz um ihre PDFs anzuzeigen</div>';
       return;
     }
@@ -469,7 +471,9 @@ export class PdfPanelView extends ItemView {
       this.statusEl.innerHTML =
         '<div class="remnote-pdf-status-icon">⚠️</div>' +
         '<div class="remnote-pdf-status-text">PDF nicht gefunden</div>' +
-        '<div class="remnote-pdf-status-sub">' + storedPath + '</div>';
+        '<div class="remnote-pdf-status-sub">' + storedPath +
+        (Platform.isMobile ? '<br><br>Noch nicht synchronisiert?<br>Remotely Save → Sync Now' : '') +
+        '</div>';
       return;
     }
     this.renderRetry = 0;

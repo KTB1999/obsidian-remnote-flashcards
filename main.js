@@ -1948,7 +1948,8 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     this.pdfContainer = mainArea.createDiv("remnote-pdf-container");
     this.dropOverlay = mainArea.createDiv("remnote-pdf-drop-overlay");
     this.dropOverlay.innerHTML = '<div class="remnote-pdf-drop-icon">\u{1F4E5}</div><div class="remnote-pdf-drop-title">PDF hier ablegen</div><div class="remnote-pdf-drop-sub">Wird in Vault importiert und verkn\xFCpft</div>';
-    this.attachDragDrop(mainArea);
+    if (!import_obsidian6.Platform.isMobile)
+      this.attachDragDrop(mainArea);
     this.refreshTabs();
     this.renderPdf();
   }
@@ -2043,7 +2044,7 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
       this.statusEl.style.display = "flex";
       if (this.pdfNameEl)
         this.pdfNameEl.textContent = "";
-      this.statusEl.innerHTML = this.notePath ? '<div class="remnote-pdf-status-icon">\u{1F4C4}</div><div class="remnote-pdf-status-text">Kein PDF verkn\xFCpft</div><div class="remnote-pdf-status-sub">PDF aus Windows Explorer hier reinziehen<br>oder \u201E+ PDF\u201C f\xFCr ein PDF aus dem Vault</div>' : '<div class="remnote-pdf-status-icon">\u{1F4DD}</div><div class="remnote-pdf-status-text">Keine Notiz ge\xF6ffnet</div><div class="remnote-pdf-status-sub">\xD6ffne eine Notiz um ihre PDFs anzuzeigen</div>';
+      this.statusEl.innerHTML = this.notePath ? "<div class=\u201Dremnote-pdf-status-icon\u201D>\u{1F4C4}</div><div class=\u201Dremnote-pdf-status-text\u201D>Kein PDF verkn\xFCpft</div>" + (import_obsidian6.Platform.isMobile ? "<div class=\u201Dremnote-pdf-status-sub\u201D>\u201E+ PDF\u201D antippen um ein PDF aus dem Vault hinzuzuf\xFCgen</div>" : "<div class=\u201Dremnote-pdf-status-sub\u201D>PDF aus Windows Explorer hier reinziehen<br>oder \u201E+ PDF\u201D f\xFCr ein PDF aus dem Vault</div>") : '<div class=\u201Dremnote-pdf-status-icon\u201D>\u{1F4DD}</div><div class=\u201Dremnote-pdf-status-text\u201D>Keine Notiz ge\xF6ffnet</div><div class="remnote-pdf-status-sub">\xD6ffne eine Notiz um ihre PDFs anzuzeigen</div>';
       return;
     }
     this.pdfContainer.style.display = "block";
@@ -2060,7 +2061,7 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
       new import_obsidian6.Notice("PDF nicht im Vault gefunden: " + storedPath, 5e3);
       this.pdfContainer.style.display = "none";
       this.statusEl.style.display = "flex";
-      this.statusEl.innerHTML = '<div class="remnote-pdf-status-icon">\u26A0\uFE0F</div><div class="remnote-pdf-status-text">PDF nicht gefunden</div><div class="remnote-pdf-status-sub">' + storedPath + "</div>";
+      this.statusEl.innerHTML = '<div class="remnote-pdf-status-icon">\u26A0\uFE0F</div><div class="remnote-pdf-status-text">PDF nicht gefunden</div><div class="remnote-pdf-status-sub">' + storedPath + (import_obsidian6.Platform.isMobile ? "<br><br>Noch nicht synchronisiert?<br>Remotely Save \u2192 Sync Now" : "") + "</div>";
       return;
     }
     this.renderRetry = 0;
