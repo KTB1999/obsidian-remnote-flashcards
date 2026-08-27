@@ -1,6 +1,6 @@
 ﻿import {
   ItemView, WorkspaceLeaf, TFile, Notice,
-  Modal, App, MarkdownView
+  Modal, App, MarkdownView, MarkdownRenderer, Platform
 } from "obsidian";
 import type RemNoteFlashcardsPlugin from "./main";
 
@@ -477,17 +477,29 @@ export class PdfPanelView extends ItemView {
     if (this.pdfNameEl) this.pdfNameEl.textContent = pdfFile.name;
     if (this.pageInput)  this.pageInput.value        = String(this.currentPage);
 
-    // Use Chromium's native PDF viewer via vault resource URL.
-    // This avoids the PDF.js canvas blank-on-init issue that affects Obsidian's
-    // inline embed when the host container hasn't settled its dimensions yet.
-    const resourceUrl = (this.app.vault as any).getResourcePath(pdfFile) as string;
-
-    this.pdfIframe = document.createElement("iframe");
-    this.pdfIframe.src = resourceUrl + "#page=" + this.currentPage;
-    this.pdfIframe.setAttribute("style",
-      "position:absolute;inset:0;width:100%;height:100%;border:none;display:block;"
-    );
-    this.pdfContainer!.appendChild(this.pdfIframe);
+    if (Platform.isMobile) {
+      // Android/iOS WebView can't render app://local URLs.
+      // Use Obsidian's native PDF embed instead — works on mobile.
+      this.pdfContainer!.style.overflowY = "auto";
+      await MarkdownRenderer.render(
+        this.app,
+        `![[${pdfFile.name}#page=${this.currentPage}]]`,
+        this.pdfContainer!,
+        pdfFile.path,
+        this
+      );
+    } else {
+      // Desktop: Chromium's native PDF viewer via vault resource URL.
+      // Avoids PDF.js canvas blank-on-init in sidebar context.
+      this.pdfContainer!.style.overflowY = "";
+      const resourceUrl = (this.app.vault as any).getResourcePath(pdfFile) as string;
+      this.pdfIframe = document.createElement("iframe");
+      this.pdfIframe.src = resourceUrl + "#page=" + this.currentPage;
+      this.pdfIframe.setAttribute("style",
+        "position:absolute;inset:0;width:100%;height:100%;border:none;display:block;"
+      );
+      this.pdfContainer!.appendChild(this.pdfIframe);
+    }
 
     this.scheduleSave();
   }
@@ -498,8 +510,9 @@ export class PdfPanelView extends ItemView {
     this.currentPage = page;
     if (this.pageInput) this.pageInput.value = String(page);
 
-    // Update iframe src directly — avoids full re-render
-    if (this.pdfIframe) {
+    if (Platform.isMobile) {
+      this.renderPdf();
+    } else if (this.pdfIframe) {
       try {
         const base = this.pdfIframe.src.split("#")[0];
         this.pdfIframe.src = base + "#page=" + page;

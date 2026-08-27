@@ -2068,14 +2068,26 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
       this.pdfNameEl.textContent = pdfFile.name;
     if (this.pageInput)
       this.pageInput.value = String(this.currentPage);
-    const resourceUrl = this.app.vault.getResourcePath(pdfFile);
-    this.pdfIframe = document.createElement("iframe");
-    this.pdfIframe.src = resourceUrl + "#page=" + this.currentPage;
-    this.pdfIframe.setAttribute(
-      "style",
-      "position:absolute;inset:0;width:100%;height:100%;border:none;display:block;"
-    );
-    this.pdfContainer.appendChild(this.pdfIframe);
+    if (import_obsidian6.Platform.isMobile) {
+      this.pdfContainer.style.overflowY = "auto";
+      await import_obsidian6.MarkdownRenderer.render(
+        this.app,
+        `![[${pdfFile.name}#page=${this.currentPage}]]`,
+        this.pdfContainer,
+        pdfFile.path,
+        this
+      );
+    } else {
+      this.pdfContainer.style.overflowY = "";
+      const resourceUrl = this.app.vault.getResourcePath(pdfFile);
+      this.pdfIframe = document.createElement("iframe");
+      this.pdfIframe.src = resourceUrl + "#page=" + this.currentPage;
+      this.pdfIframe.setAttribute(
+        "style",
+        "position:absolute;inset:0;width:100%;height:100%;border:none;display:block;"
+      );
+      this.pdfContainer.appendChild(this.pdfIframe);
+    }
     this.scheduleSave();
   }
   // ── Navigation ────────────────────────────────────────────────────────────
@@ -2085,7 +2097,9 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
     this.currentPage = page;
     if (this.pageInput)
       this.pageInput.value = String(page);
-    if (this.pdfIframe) {
+    if (import_obsidian6.Platform.isMobile) {
+      this.renderPdf();
+    } else if (this.pdfIframe) {
       try {
         const base = this.pdfIframe.src.split("#")[0];
         this.pdfIframe.src = base + "#page=" + page;
