@@ -440,13 +440,13 @@ export class PdfPanelView extends ItemView {
       this.statusEl.style.display     = "flex";
       if (this.pdfNameEl) this.pdfNameEl.textContent = "";
       this.statusEl.innerHTML = this.notePath
-        ? '<div class=”remnote-pdf-status-icon”>📄</div>' +
-          '<div class=”remnote-pdf-status-text”>Kein PDF verknüpft</div>' +
+        ? '<div class="remnote-pdf-status-icon">📄</div>' +
+          '<div class="remnote-pdf-status-text">Kein PDF verknüpft</div>' +
           (Platform.isMobile
-            ? '<div class=”remnote-pdf-status-sub”>„+ PDF” antippen um ein PDF aus dem Vault hinzuzufügen</div>'
-            : '<div class=”remnote-pdf-status-sub”>PDF aus Windows Explorer hier reinziehen<br>oder „+ PDF” für ein PDF aus dem Vault</div>')
-        : '<div class=”remnote-pdf-status-icon”>📝</div>' +
-          '<div class=”remnote-pdf-status-text”>Keine Notiz geöffnet</div>' +
+            ? '<div class="remnote-pdf-status-sub">„+ PDF” antippen um ein PDF aus dem Vault hinzuzufügen</div>'
+            : '<div class="remnote-pdf-status-sub">PDF aus Windows Explorer hier reinziehen<br>oder „+ PDF” für ein PDF aus dem Vault</div>')
+        : '<div class="remnote-pdf-status-icon">📝</div>' +
+          '<div class="remnote-pdf-status-text">Keine Notiz geöffnet</div>' +
           '<div class="remnote-pdf-status-sub">Öffne eine Notiz um ihre PDFs anzuzeigen</div>';
       return;
     }

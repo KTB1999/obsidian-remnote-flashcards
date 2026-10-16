@@ -1,7 +1,8 @@
 export type CardType = "basic" | "dropdown" | "multilayer";
 
 export interface Flashcard {
-  id: string;          // hash of filePath + line + front
+  id: string;          // hash of filePath + front (+ occurrence for duplicate fronts)
+  legacyId: string;    // pre-1.7.6 id (included the line number) — review migration only
   filePath: string;
   front: string;
   back: string;

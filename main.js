@@ -62,14 +62,21 @@ function cardBelongsToGroup(card, group) {
 }
 
 // src/parser.ts
-function cardId(filePath, front, line) {
-  const str = `${filePath}:${line}:${front}`;
+function hash(str) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
     h = Math.imul(h, 16777619) >>> 0;
   }
   return h.toString(36).padStart(7, "0");
+}
+function cardId(filePath, front, occurrence) {
+  return hash(`${filePath}
+${front}` + (occurrence > 0 ? `
+${occurrence}` : ""));
+}
+function legacyCardId(filePath, front, line) {
+  return hash(`${filePath}:${line}:${front}`);
 }
 function isMultilayer(back) {
   return back.split("\n").some((l) => {
@@ -81,6 +88,21 @@ function parseFlashcards(content, filePath) {
   var _a, _b, _c;
   const cards = [];
   const lines = content.split("\n");
+  const seenFronts = /* @__PURE__ */ new Map();
+  const add = (front, legacyFront, back, type, line) => {
+    var _a2;
+    const occurrence = (_a2 = seenFronts.get(front)) != null ? _a2 : 0;
+    seenFronts.set(front, occurrence + 1);
+    cards.push({
+      id: cardId(filePath, front, occurrence),
+      legacyId: legacyCardId(filePath, legacyFront, line),
+      filePath,
+      front,
+      back,
+      type,
+      line
+    });
+  };
   let startLine = 0;
   if (((_a = lines[0]) == null ? void 0 : _a.trim()) === "---") {
     for (let i2 = 1; i2 < lines.length; i2++) {
@@ -102,11 +124,20 @@ function parseFlashcards(content, filePath) {
     }
     const dropIdx = findSeparator(line, ":::");
     if (dropIdx !== -1) {
-      const front = cleanFront(line.slice(0, dropIdx));
-      if (front) {
-        const { back, consumed } = collectUntilBlank(lines, i + 1);
+      const head = line.slice(0, dropIdx);
+      const legacyFront = cleanFront(head);
+      if (legacyFront) {
+        const innerIdx = findSeparator(head, "::");
+        const rawFront = innerIdx !== -1 ? cleanFront(head.slice(0, innerIdx)) : legacyFront;
+        const inline = [
+          innerIdx !== -1 ? head.slice(innerIdx + 2).trim() : "",
+          line.slice(dropIdx + 3).trim()
+        ].filter(Boolean).join(" ");
+        const { rest, consumed } = collectUntilBlank(lines, i + 1);
+        const [front, firstLine] = closeSplitMarker(rawFront || legacyFront, inline);
+        const back = [firstLine, dedent(rest)].filter(Boolean).join("\n");
         const type = isMultilayer(back) ? "multilayer" : "dropdown";
-        cards.push({ id: cardId(filePath, front, i), filePath, front, back, type, line: i });
+        add(front, legacyFront, back, type, i);
         i += consumed;
       }
       i++;
@@ -114,10 +145,10 @@ function parseFlashcards(content, filePath) {
     }
     const basicIdx = findSeparator(line, "::");
     if (basicIdx !== -1) {
-      const front = cleanFront(line.slice(0, basicIdx));
-      const back = line.slice(basicIdx + 2).trim();
-      if (front) {
-        cards.push({ id: cardId(filePath, front, i), filePath, front, back, type: "basic", line: i });
+      const legacyFront = cleanFront(line.slice(0, basicIdx));
+      if (legacyFront) {
+        const [front, back] = closeSplitMarker(legacyFront, line.slice(basicIdx + 2).trim());
+        add(front, legacyFront, back, "basic", i);
       }
       i++;
       continue;
@@ -127,16 +158,65 @@ function parseFlashcards(content, filePath) {
   return cards;
 }
 function collectUntilBlank(lines, nextLine) {
-  const parts = [];
+  const rest = [];
   let j = nextLine;
   while (j < lines.length && lines[j].trim() !== "") {
-    parts.push(lines[j]);
+    rest.push(lines[j]);
     j++;
   }
-  return { back: parts.join("\n"), consumed: j - nextLine };
+  return { rest, consumed: j - nextLine };
+}
+function dedent(lines) {
+  const clean = lines.map((l) => l.replace(/\s+$/, ""));
+  const indent = Math.min(...clean.map((l) => l.match(/^[\t ]*/)[0].length));
+  return clean.map((l) => l.slice(indent)).join("\n");
+}
+function closeSplitMarker(front, back) {
+  for (const marker of ["**", "=="]) {
+    const opened = front.split(marker).length - 1;
+    if (opened % 2 === 1 && back.startsWith(marker)) {
+      return [front.trimEnd() + marker, back.slice(marker.length).trimStart()];
+    }
+  }
+  return [front, back];
 }
 function cleanFront(raw) {
   return raw.replace(/^[\s]*[-*+]\s+/, "").replace(/^\s*\d+\.\s+/, "").replace(/^\s*#+\s+/, "").trim();
+}
+function parseMultilayerItems(back) {
+  const lines = back.split("\n");
+  const indentOf = (l) => l.match(/^[\t ]*/)[0].length;
+  const items = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+    const content = line.trim().replace(/^[-*+]\s+/, "");
+    const dropIdx = findSeparator(content, ":::");
+    const head = dropIdx !== -1 ? content.slice(0, dropIdx) : content;
+    const tail = dropIdx !== -1 ? content.slice(dropIdx + 3).trim() : "";
+    const basicIdx = findSeparator(head, "::");
+    if (dropIdx === -1 && basicIdx === -1) {
+      items.push({ key: content, answer: "", sub: "", rateable: false });
+      i++;
+      continue;
+    }
+    const indent = indentOf(line);
+    const sub = [];
+    let j = i + 1;
+    while (j < lines.length && lines[j].trim() && indentOf(lines[j]) > indent) {
+      sub.push(lines[j]);
+      j++;
+    }
+    const key = (basicIdx !== -1 ? head.slice(0, basicIdx) : head).trim();
+    const answer = [basicIdx !== -1 ? head.slice(basicIdx + 2).trim() : "", tail].filter(Boolean).join(" ");
+    items.push({ key, answer, sub: sub.join("\n"), rateable: true });
+    i = j;
+  }
+  return items;
 }
 function findSeparator(line, sep) {
   let inCode = false;
@@ -160,13 +240,17 @@ function findSeparator(line, sep) {
 
 // src/sm2.ts
 var MIN_EF = 1.3;
+function localDateStr(d) {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateStr(new Date());
 }
 function addDays(dateStr, days) {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return localDateStr(new Date(y, m - 1, d + days));
 }
 function daysBetween(a, b) {
   const msPerDay = 864e5;
@@ -401,8 +485,12 @@ var ReviewModal = class extends import_obsidian.Modal {
       this.keyHandler = null;
     }
     this.contentEl.empty();
-    this.plugin.pluginData.lastSession = null;
-    this.plugin.savePluginData();
+    if (this.currentIndex < this.cards.length) {
+      this.saveProgress();
+    } else {
+      this.plugin.pluginData.lastSession = null;
+      this.plugin.savePluginData();
+    }
   }
   get currentCard() {
     return this.cards[this.currentIndex];
@@ -589,53 +677,10 @@ var ReviewModal = class extends import_obsidian.Modal {
     document.addEventListener("keydown", this.keyHandler);
   }
   async renderMultilayerItems(back, container, card) {
-    var _a, _b, _c, _d, _e, _f;
     const ratingOrder = ["again", "hard", "good", "easy"];
     const ratingValue = (r) => ratingOrder.indexOf(r);
-    const lines = back.split("\n");
-    const parsedItems = [];
-    let i = 0;
-    while (i < lines.length) {
-      const line = lines[i];
-      const trimmed = line.trim();
-      if (!trimmed) {
-        i++;
-        continue;
-      }
-      const content = trimmed.replace(/^[-*+]\s+/, "");
-      const indent = (_c = (_b = (_a = line.match(/^(\s*)/)) == null ? void 0 : _a[1]) == null ? void 0 : _b.length) != null ? _c : 0;
-      const dropIdx = findSeparator(content, ":::");
-      if (dropIdx !== -1) {
-        const qText = content.slice(0, dropIdx).trim();
-        const aText = content.slice(dropIdx + 3).trim();
-        const subLines = [];
-        let j = i + 1;
-        while (j < lines.length) {
-          const nextIndent = (_f = (_e = (_d = lines[j].match(/^(\s*)/)) == null ? void 0 : _d[1]) == null ? void 0 : _e.length) != null ? _f : 0;
-          if (!lines[j].trim() || nextIndent <= indent)
-            break;
-          subLines.push(lines[j]);
-          j++;
-        }
-        const fullAnswer = [aText, ...subLines].filter(Boolean).join("\n");
-        parsedItems.push({ qText, aText: fullAnswer, isRateable: true });
-        i = j;
-        continue;
-      }
-      const basicIdx = findSeparator(content, "::");
-      if (basicIdx !== -1) {
-        parsedItems.push({
-          qText: content.slice(0, basicIdx).trim(),
-          aText: content.slice(basicIdx + 2).trim(),
-          isRateable: true
-        });
-        i++;
-        continue;
-      }
-      parsedItems.push({ qText: content, aText: "", isRateable: false });
-      i++;
-    }
-    const rateableItems = parsedItems.filter((it) => it.isRateable);
+    const parsedItems = parseMultilayerItems(back);
+    const rateableItems = parsedItems.filter((it) => it.rateable);
     if (rateableItems.length === 0) {
       await this.renderMultilayerBack(back, container, card.filePath);
       this.showAnswerActions(container, card);
@@ -644,29 +689,35 @@ var ReviewModal = class extends import_obsidian.Modal {
     const ratings = /* @__PURE__ */ new Map();
     for (let idx = 0; idx < parsedItems.length; idx++) {
       const item = parsedItems[idx];
-      if (!item.isRateable) {
+      if (!item.rateable) {
         const plain = container.createDiv("remnote-ml-plain");
-        await import_obsidian.MarkdownRenderer.render(this.app, item.qText, plain, card.filePath, this.plugin);
+        await import_obsidian.MarkdownRenderer.render(this.app, item.key, plain, card.filePath, this.plugin);
         continue;
       }
       const rateableIdx = rateableItems.indexOf(item);
       const row = container.createDiv("remnote-ml-row remnote-ml-progressive");
       const qEl = row.createDiv("remnote-ml-question remnote-ml-clickable");
-      await import_obsidian.MarkdownRenderer.render(this.app, item.qText, qEl, card.filePath, this.plugin);
+      await import_obsidian.MarkdownRenderer.render(this.app, item.key, qEl, card.filePath, this.plugin);
       qEl.createSpan({ text: " \u25B6", cls: "remnote-ml-expand-hint" });
       const expandArea = row.createDiv("remnote-ml-expand-area");
       expandArea.style.display = "none";
       let expanded = false;
       qEl.onclick = async () => {
-        var _a2;
+        var _a;
         if (expanded)
           return;
         expanded = true;
         qEl.classList.remove("remnote-ml-clickable");
-        (_a2 = qEl.querySelector(".remnote-ml-expand-hint")) == null ? void 0 : _a2.remove();
+        (_a = qEl.querySelector(".remnote-ml-expand-hint")) == null ? void 0 : _a.remove();
         expandArea.style.display = "block";
-        const aEl = expandArea.createDiv("remnote-ml-answer");
-        await import_obsidian.MarkdownRenderer.render(this.app, item.aText, aEl, card.filePath, this.plugin);
+        if (item.answer) {
+          const aEl = expandArea.createDiv("remnote-ml-answer");
+          await import_obsidian.MarkdownRenderer.render(this.app, item.answer, aEl, card.filePath, this.plugin);
+        }
+        if (item.sub) {
+          const subEl = expandArea.createDiv("remnote-ml-subcontainer");
+          await this.renderMultilayerBack(item.sub, subEl, card.filePath);
+        }
         const itemRatingWrap = expandArea.createDiv("remnote-ml-item-rating");
         const btnRow = itemRatingWrap.createDiv("remnote-ml-item-btn-row");
         const ratingDefs = [
@@ -697,6 +748,7 @@ var ReviewModal = class extends import_obsidian.Modal {
         }
       };
     }
+    this.showAiExplain(container, card);
   }
   async renderMultilayerBack(back, container, filePath) {
     var _a, _b, _c, _d, _e, _f;
@@ -772,26 +824,29 @@ var ReviewModal = class extends import_obsidian.Modal {
   isRatingVisible(container) {
     return !!container.querySelector(".remnote-rating-wrap");
   }
+  showAiExplain(container, card) {
+    if (!this.plugin.pluginData.settings.aiEnabled)
+      return;
+    const aiRow = container.createDiv("remnote-ai-row");
+    const aiBtn = aiRow.createEl("button", { text: "\u2726 Erkl\xE4ren", cls: "remnote-btn remnote-btn-ai" });
+    aiBtn.onclick = async () => {
+      aiBtn.disabled = true;
+      aiBtn.setText("Erkl\xE4re...");
+      try {
+        const explanation = await aiExplainAnswer(card.front, card.back, this.plugin.pluginData.settings);
+        aiBtn.style.display = "none";
+        const aiEl = container.createDiv("remnote-ai-answer");
+        aiEl.createEl("span", { text: "\u2726 ", cls: "remnote-ai-label" });
+        await import_obsidian.MarkdownRenderer.render(this.app, explanation, aiEl, card.filePath, this.plugin);
+      } catch (e) {
+        aiBtn.disabled = false;
+        aiBtn.setText("\u2726 Erkl\xE4ren");
+        new import_obsidian.Notice("AI Fehler: " + e.message);
+      }
+    };
+  }
   showAnswerActions(container, card) {
-    if (this.plugin.pluginData.settings.aiEnabled) {
-      const aiRow = container.createDiv("remnote-ai-row");
-      const aiBtn = aiRow.createEl("button", { text: "\u2726 Erkl\xE4ren", cls: "remnote-btn remnote-btn-ai" });
-      aiBtn.onclick = async () => {
-        aiBtn.disabled = true;
-        aiBtn.setText("Erkl\xE4re...");
-        try {
-          const explanation = await aiExplainAnswer(card.front, card.back, this.plugin.pluginData.settings);
-          aiBtn.style.display = "none";
-          const aiEl = container.createDiv("remnote-ai-answer");
-          aiEl.createEl("span", { text: "\u2726 ", cls: "remnote-ai-label" });
-          await import_obsidian.MarkdownRenderer.render(this.app, explanation, aiEl, card.filePath, this.plugin);
-        } catch (e) {
-          aiBtn.disabled = false;
-          aiBtn.setText("\u2726 Erkl\xE4ren");
-          new import_obsidian.Notice("AI Fehler: " + e.message);
-        }
-      };
-    }
+    this.showAiExplain(container, card);
     this.showRatingButtons(container, card);
   }
   showRatingButtons(container, card) {
@@ -2044,7 +2099,7 @@ var PdfPanelView = class extends import_obsidian6.ItemView {
       this.statusEl.style.display = "flex";
       if (this.pdfNameEl)
         this.pdfNameEl.textContent = "";
-      this.statusEl.innerHTML = this.notePath ? "<div class=\u201Dremnote-pdf-status-icon\u201D>\u{1F4C4}</div><div class=\u201Dremnote-pdf-status-text\u201D>Kein PDF verkn\xFCpft</div>" + (import_obsidian6.Platform.isMobile ? "<div class=\u201Dremnote-pdf-status-sub\u201D>\u201E+ PDF\u201D antippen um ein PDF aus dem Vault hinzuzuf\xFCgen</div>" : "<div class=\u201Dremnote-pdf-status-sub\u201D>PDF aus Windows Explorer hier reinziehen<br>oder \u201E+ PDF\u201D f\xFCr ein PDF aus dem Vault</div>") : '<div class=\u201Dremnote-pdf-status-icon\u201D>\u{1F4DD}</div><div class=\u201Dremnote-pdf-status-text\u201D>Keine Notiz ge\xF6ffnet</div><div class="remnote-pdf-status-sub">\xD6ffne eine Notiz um ihre PDFs anzuzeigen</div>';
+      this.statusEl.innerHTML = this.notePath ? '<div class="remnote-pdf-status-icon">\u{1F4C4}</div><div class="remnote-pdf-status-text">Kein PDF verkn\xFCpft</div>' + (import_obsidian6.Platform.isMobile ? '<div class="remnote-pdf-status-sub">\u201E+ PDF\u201D antippen um ein PDF aus dem Vault hinzuzuf\xFCgen</div>' : '<div class="remnote-pdf-status-sub">PDF aus Windows Explorer hier reinziehen<br>oder \u201E+ PDF\u201D f\xFCr ein PDF aus dem Vault</div>') : '<div class="remnote-pdf-status-icon">\u{1F4DD}</div><div class="remnote-pdf-status-text">Keine Notiz ge\xF6ffnet</div><div class="remnote-pdf-status-sub">\xD6ffne eine Notiz um ihre PDFs anzuzeigen</div>';
       return;
     }
     this.pdfContainer.style.display = "block";
@@ -2430,6 +2485,12 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian7.Plugin {
       })
     );
     this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (file instanceof import_obsidian7.TFile && file.extension === "md")
+          this.handleRename(file, oldPath);
+      })
+    );
+    this.registerEvent(
       this.app.vault.on("delete", (file) => {
         if (file instanceof import_obsidian7.TFile) {
           this.allCards = this.allCards.filter((c) => c.filePath !== file.path);
@@ -2488,6 +2549,7 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian7.Plugin {
       })
     );
     this.allCards = results.flat();
+    await this.migrateLegacyReviews(this.allCards);
   }
   async scanFile(file, merge = true) {
     const content = await this.app.vault.read(file);
@@ -2498,6 +2560,43 @@ var RemNoteFlashcardsPlugin = class extends import_obsidian7.Plugin {
     } else {
       this.allCards.push(...cards);
     }
+    await this.migrateLegacyReviews(cards);
+  }
+  /** Move reviews stored under the pre-1.7.6 line-based ids to the stable ids. */
+  async migrateLegacyReviews(cards) {
+    const { reviews } = this.pluginData;
+    let moved = false;
+    for (const card of cards) {
+      const old = reviews[card.legacyId];
+      if (!old || card.legacyId === card.id || reviews[card.id])
+        continue;
+      reviews[card.id] = { ...old, cardId: card.id };
+      delete reviews[card.legacyId];
+      moved = true;
+    }
+    if (moved)
+      await this.savePluginData();
+  }
+  /** A renamed or moved note keeps its cards' review history. */
+  async handleRename(file, oldPath) {
+    const oldCards = this.allCards.filter((c) => c.filePath === oldPath);
+    this.allCards = this.allCards.filter((c) => c.filePath !== oldPath);
+    if (this.inScanScope(file.path))
+      await this.scanFile(file);
+    const newCards = this.allCards.filter((c) => c.filePath === file.path);
+    const { reviews } = this.pluginData;
+    let moved = false;
+    newCards.forEach((card, i) => {
+      const old = oldCards[i];
+      if (!old || old.front !== card.front || !reviews[old.id] || reviews[card.id])
+        return;
+      reviews[card.id] = { ...reviews[old.id], cardId: card.id };
+      delete reviews[old.id];
+      moved = true;
+    });
+    if (moved)
+      await this.savePluginData();
+    this.updateBadge();
   }
   // ── Badge ──────────────────────────────────────────────────
   updateBadge() {

@@ -2,7 +2,7 @@ import { App, Modal, MarkdownRenderer, Notice, TFile } from "obsidian";
 import { Flashcard, Rating, PluginData, SessionState } from "./types";
 import { applyRating, newRecord, isDue } from "./sm2";
 import { aiExplainAnswer } from "./ai";
-import { findSeparator } from "./parser";
+import { findSeparator, parseMultilayerItems } from "./parser";
 import type RemNoteFlashcardsPlugin from "./main";
 
 export interface ReviewOptions {
@@ -67,8 +67,13 @@ export class ReviewModal extends Modal {
   onClose() {
     if (this.keyHandler) { document.removeEventListener("keydown", this.keyHandler); this.keyHandler = null; }
     this.contentEl.empty();
-    this.plugin.pluginData.lastSession = null;
-    this.plugin.savePluginData();
+    // Keep the position when closed mid-session so the picker can offer "Weitermachen"
+    if (this.currentIndex < this.cards.length) {
+      this.saveProgress();
+    } else {
+      this.plugin.pluginData.lastSession = null;
+      this.plugin.savePluginData();
+    }
   }
 
   private get currentCard(): Flashcard { return this.cards[this.currentIndex]; }
@@ -256,48 +261,8 @@ export class ReviewModal extends Modal {
     const ratingOrder: Rating[] = ["again", "hard", "good", "easy"];
     const ratingValue = (r: Rating): number => ratingOrder.indexOf(r);
 
-    const lines = back.split("\n");
-    const parsedItems: Array<{ qText: string; aText: string; isRateable: boolean }> = [];
-
-    let i = 0;
-    while (i < lines.length) {
-      const line    = lines[i];
-      const trimmed = line.trim();
-      if (!trimmed) { i++; continue; }
-      const content = trimmed.replace(/^[-*+]\s+/, "");
-      const indent  = line.match(/^(\s*)/)?.[1]?.length ?? 0;
-
-      const dropIdx = findSeparator(content, ":::");
-      if (dropIdx !== -1) {
-        const qText = content.slice(0, dropIdx).trim();
-        const aText = content.slice(dropIdx + 3).trim();
-        const subLines: string[] = [];
-        let j = i + 1;
-        while (j < lines.length) {
-          const nextIndent = lines[j].match(/^(\s*)/)?.[1]?.length ?? 0;
-          if (!lines[j].trim() || nextIndent <= indent) break;
-          subLines.push(lines[j]); j++;
-        }
-        const fullAnswer = [aText, ...subLines].filter(Boolean).join("\n");
-        parsedItems.push({ qText, aText: fullAnswer, isRateable: true });
-        i = j; continue;
-      }
-
-      const basicIdx = findSeparator(content, "::");
-      if (basicIdx !== -1) {
-        parsedItems.push({
-          qText: content.slice(0, basicIdx).trim(),
-          aText: content.slice(basicIdx + 2).trim(),
-          isRateable: true,
-        });
-        i++; continue;
-      }
-
-      parsedItems.push({ qText: content, aText: "", isRateable: false });
-      i++;
-    }
-
-    const rateableItems = parsedItems.filter(it => it.isRateable);
+    const parsedItems   = parseMultilayerItems(back);
+    const rateableItems = parsedItems.filter(it => it.rateable);
     if (rateableItems.length === 0) {
       await this.renderMultilayerBack(back, container, card.filePath);
       this.showAnswerActions(container, card);
@@ -309,9 +274,9 @@ export class ReviewModal extends Modal {
     for (let idx = 0; idx < parsedItems.length; idx++) {
       const item = parsedItems[idx];
 
-      if (!item.isRateable) {
+      if (!item.rateable) {
         const plain = container.createDiv("remnote-ml-plain");
-        await MarkdownRenderer.render(this.app, item.qText, plain, card.filePath, this.plugin);
+        await MarkdownRenderer.render(this.app, item.key, plain, card.filePath, this.plugin);
         continue;
       }
 
@@ -319,7 +284,7 @@ export class ReviewModal extends Modal {
       const row = container.createDiv("remnote-ml-row remnote-ml-progressive");
 
       const qEl = row.createDiv("remnote-ml-question remnote-ml-clickable");
-      await MarkdownRenderer.render(this.app, item.qText, qEl, card.filePath, this.plugin);
+      await MarkdownRenderer.render(this.app, item.key, qEl, card.filePath, this.plugin);
       qEl.createSpan({ text: " ▶", cls: "remnote-ml-expand-hint" });
 
       const expandArea = row.createDiv("remnote-ml-expand-area");
@@ -333,8 +298,14 @@ export class ReviewModal extends Modal {
         qEl.querySelector<HTMLElement>(".remnote-ml-expand-hint")?.remove();
         expandArea.style.display = "block";
 
-        const aEl = expandArea.createDiv("remnote-ml-answer");
-        await MarkdownRenderer.render(this.app, item.aText, aEl, card.filePath, this.plugin);
+        if (item.answer) {
+          const aEl = expandArea.createDiv("remnote-ml-answer");
+          await MarkdownRenderer.render(this.app, item.answer, aEl, card.filePath, this.plugin);
+        }
+        if (item.sub) {
+          const subEl = expandArea.createDiv("remnote-ml-subcontainer");
+          await this.renderMultilayerBack(item.sub, subEl, card.filePath);
+        }
 
         const itemRatingWrap = expandArea.createDiv("remnote-ml-item-rating");
         const btnRow = itemRatingWrap.createDiv("remnote-ml-item-btn-row");
@@ -369,6 +340,8 @@ export class ReviewModal extends Modal {
         }
       };
     }
+
+    this.showAiExplain(container, card);
   }
 
   private async renderMultilayerBack(back: string, container: HTMLElement, filePath: string) {
@@ -442,24 +415,27 @@ export class ReviewModal extends Modal {
     return !!container.querySelector(".remnote-rating-wrap");
   }
 
+  private showAiExplain(container: HTMLElement, card: Flashcard) {
+    if (!this.plugin.pluginData.settings.aiEnabled) return;
+    const aiRow = container.createDiv("remnote-ai-row");
+    const aiBtn = aiRow.createEl("button", { text: "✦ Erklären", cls: "remnote-btn remnote-btn-ai" });
+    aiBtn.onclick = async () => {
+      aiBtn.disabled = true; aiBtn.setText("Erkläre...");
+      try {
+        const explanation = await aiExplainAnswer(card.front, card.back, this.plugin.pluginData.settings);
+        aiBtn.style.display = "none";
+        const aiEl = container.createDiv("remnote-ai-answer");
+        aiEl.createEl("span", { text: "✦ ", cls: "remnote-ai-label" });
+        await MarkdownRenderer.render(this.app, explanation, aiEl, card.filePath, this.plugin);
+      } catch (e) {
+        aiBtn.disabled = false; aiBtn.setText("✦ Erklären");
+        new Notice("AI Fehler: " + e.message);
+      }
+    };
+  }
+
   private showAnswerActions(container: HTMLElement, card: Flashcard) {
-    if (this.plugin.pluginData.settings.aiEnabled) {
-      const aiRow = container.createDiv("remnote-ai-row");
-      const aiBtn = aiRow.createEl("button", { text: "✦ Erklären", cls: "remnote-btn remnote-btn-ai" });
-      aiBtn.onclick = async () => {
-        aiBtn.disabled = true; aiBtn.setText("Erkläre...");
-        try {
-          const explanation = await aiExplainAnswer(card.front, card.back, this.plugin.pluginData.settings);
-          aiBtn.style.display = "none";
-          const aiEl = container.createDiv("remnote-ai-answer");
-          aiEl.createEl("span", { text: "✦ ", cls: "remnote-ai-label" });
-          await MarkdownRenderer.render(this.app, explanation, aiEl, card.filePath, this.plugin);
-        } catch (e) {
-          aiBtn.disabled = false; aiBtn.setText("✦ Erklären");
-          new Notice("AI Fehler: " + e.message);
-        }
-      };
-    }
+    this.showAiExplain(container, card);
     this.showRatingButtons(container, card);
   }
 

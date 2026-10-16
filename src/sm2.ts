@@ -2,14 +2,21 @@ import { ReviewRecord, Rating, RATING_QUALITY } from "./types";
 
 const MIN_EF = 1.3;
 
+// Local calendar date. toISOString() is UTC, which is still "yesterday" for
+// the first hours after midnight in Europe — due cards would not show up.
+function localDateStr(d: Date): string {
+  const m   = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 export function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localDateStr(new Date());
 }
 
 export function addDays(dateStr: string, days: number): string {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return localDateStr(new Date(y, m - 1, d + days));
 }
 
 export function daysBetween(a: string, b: string): number {

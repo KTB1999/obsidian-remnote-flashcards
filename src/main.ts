@@ -151,6 +151,12 @@ export default class RemNoteFlashcardsPlugin extends Plugin {
     );
 
     this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (file instanceof TFile && file.extension === "md") this.handleRename(file, oldPath);
+      })
+    );
+
+    this.registerEvent(
       this.app.vault.on("delete", (file) => {
         if (file instanceof TFile) {
           this.allCards = this.allCards.filter((c) => c.filePath !== file.path);
@@ -213,6 +219,7 @@ export default class RemNoteFlashcardsPlugin extends Plugin {
       })
     );
     this.allCards = results.flat();
+    await this.migrateLegacyReviews(this.allCards);
   }
 
   private async scanFile(file: TFile, merge = true) {
@@ -224,6 +231,42 @@ export default class RemNoteFlashcardsPlugin extends Plugin {
     } else {
       this.allCards.push(...cards);
     }
+    await this.migrateLegacyReviews(cards);
+  }
+
+  /** Move reviews stored under the pre-1.7.6 line-based ids to the stable ids. */
+  private async migrateLegacyReviews(cards: Flashcard[]) {
+    const { reviews } = this.pluginData;
+    let moved = false;
+    for (const card of cards) {
+      const old = reviews[card.legacyId];
+      if (!old || card.legacyId === card.id || reviews[card.id]) continue;
+      reviews[card.id] = { ...old, cardId: card.id };
+      delete reviews[card.legacyId];
+      moved = true;
+    }
+    if (moved) await this.savePluginData();
+  }
+
+  /** A renamed or moved note keeps its cards' review history. */
+  private async handleRename(file: TFile, oldPath: string) {
+    const oldCards = this.allCards.filter((c) => c.filePath === oldPath);
+    this.allCards  = this.allCards.filter((c) => c.filePath !== oldPath);
+    if (this.inScanScope(file.path)) await this.scanFile(file);
+
+    // Same content, same parse order — pair old and new cards by position
+    const newCards = this.allCards.filter((c) => c.filePath === file.path);
+    const { reviews } = this.pluginData;
+    let moved = false;
+    newCards.forEach((card, i) => {
+      const old = oldCards[i];
+      if (!old || old.front !== card.front || !reviews[old.id] || reviews[card.id]) return;
+      reviews[card.id] = { ...reviews[old.id], cardId: card.id };
+      delete reviews[old.id];
+      moved = true;
+    });
+    if (moved) await this.savePluginData();
+    this.updateBadge();
   }
 
   // ── Badge ──────────────────────────────────────────────────
